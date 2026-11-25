@@ -17,7 +17,7 @@ mod oracle {
     const C_SOURCES: &[&str] = &["malloc.c", "random.c"];
 
     pub fn build() {
-        println!("cargo::rerun-if-env-changed=P2_C_SRC");
+        println!("cargo::rerun-if-env-changed=PUZZLES_C_SRC");
         let c_dir = c_source_dir();
 
         let shim = PathBuf::from("csrc/shim.c");
@@ -49,17 +49,17 @@ mod oracle {
         build.compile("puzzles_c");
     }
 
-    /// Location of the upstream C tree: `P2_C_SRC` if set, otherwise the
+    /// Location of the upstream C tree: `PUZZLES_C_SRC` if set, otherwise the
     /// `third_party/puzzles-c` submodule.
     fn c_source_dir() -> PathBuf {
-        let dir = env::var_os("P2_C_SRC").map_or_else(
+        let dir = env::var_os("PUZZLES_C_SRC").map_or_else(
             || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../third_party/puzzles-c"),
             PathBuf::from,
         );
         assert!(
             dir.join("puzzles.h").is_file(),
             "C sources not found at {}. Run `git submodule update --init`, \
-             or set P2_C_SRC to an upstream puzzles checkout.",
+             or set PUZZLES_C_SRC to an upstream puzzles checkout.",
             dir.display()
         );
         dir

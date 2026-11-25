@@ -1,4 +1,4 @@
-# Porting plan: P2 (C) → p2r (Rust)
+# Porting plan: Simon Tatham's puzzles (C) → puzzles-rs (Rust)
 
 Companion to [c-codebase-analysis.md](c-codebase-analysis.md). Every
 **[DECISION]** section was reviewed and decided on 2026-11-25. Each one
@@ -97,11 +97,11 @@ IDs and saves break).
 ## 2. Repository / workspace layout
 
 ### [DECISION 2] Turn the root into a virtual workspace (**decided**)
-The current root package `p2r` (hello world) becomes a virtual workspace.
+The original root package (hello world) becomes a virtual workspace.
 `src/main.rs` is removed.
 
 ```
-p2r/
+puzzles-rs/
 ├─ Cargo.toml                  # [workspace], shared lints, profiles, deps
 ├─ rust-toolchain.toml         # pin stable (1.100) + clippy, rustfmt
 ├─ docs/
@@ -704,8 +704,9 @@ toolkit change.
 ## 6. Testing strategy (the backbone of the port)
 
 1. **C oracle crate (`c-oracle`, dev-only).** A `build.rs` uses `cc` to
-   compile `../P2`'s `core` sources plus each game with `-DCOMBINED`, and
-   adds a small C shim (`oracle.c`) exposing flat functions:
+   compile the upstream `core` sources (from the submodule below) plus each
+   game with `-DCOMBINED`, and adds a small C shim (`csrc/shim.c`)
+   providing front-end stubs and flat functions:
    `oracle_random_bits`, `oracle_new_desc(game, params, seed)`,
    `oracle_solve(game, id)`, `oracle_execute(game, id, moves…)`,
    `oracle_redraw_trace(...)` (with a recording `drawing_api`),
@@ -721,10 +722,11 @@ toolkit change.
      (see §3.5).
    * **C source: git submodule** `third_party/puzzles-c` (upstream
      `https://git.tartarus.org/simon/puzzles.git`, pinned to `616da16`, the
-     same commit as `../P2`). CI on all 3 OSes checks it out with
-     `submodules: true`. Bumping the pin is a deliberate change that
-     re-runs the whole oracle suite. An env var `P2_C_SRC` can override
-     the path for local experiments, for example pointing at `../P2`.
+     commit analysed in `c-codebase-analysis.md`). CI on all 3 OSes checks
+     it out with `submodules: true`. Bumping the pin is a deliberate change
+     that re-runs the whole oracle suite. An env var `PUZZLES_C_SRC` can
+     override the path for local experiments, for example pointing at
+     another upstream checkout.
    * The submodule is only needed for the `oracle` feature. A plain
      `cargo build`/`cargo test` works without it.
 2. **Golden corpus.** For every game and every preset, N seeds give the

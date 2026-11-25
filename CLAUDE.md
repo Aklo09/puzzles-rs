@@ -1,8 +1,7 @@
-# p2r: Rust port of Simon Tatham's Portable Puzzle Collection
+# puzzles-rs: Rust port of Simon Tatham's Portable Puzzle Collection
 
 Upstream C source: `third_party/puzzles-c` (git submodule, pinned to
-`616da16`; being added in Phase 0. Until then, a local copy may exist at
-`../P2`). The plan and every design decision live in
+`616da16`). The plan and every design decision live in
 `docs/porting-plan.md` (decision log at the top); the C analysis is in
 `docs/c-codebase-analysis.md`. Read the relevant section before changing
 architecture.

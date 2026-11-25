@@ -1,14 +1,14 @@
-# Analysis of the C codebase (`..\P2`)
+# Analysis of the C codebase
 
-Source analysed: `D:\P2`, a checkout of upstream
-`https://git.tartarus.org/simon/puzzles.git` at commit `616da16`
-(2026-09-22, "Mines: add a user preference for question marks").
-2,328 commits of history. Licence: MIT (copyright Simon Tatham and
-contributors). The licence notice must travel with the port.
+Source analysed: upstream `https://git.tartarus.org/simon/puzzles.git`
+at commit `616da16` (2026-09-22, "Mines: add a user preference for
+question marks"), the same commit as the `third_party/puzzles-c`
+submodule. 2,328 commits of history. Licence: MIT (copyright Simon
+Tatham and contributors). The licence notice must travel with the port.
 
-The checkout also contains an in-tree MSVC Debug build (`Debug\*.exe`,
-`Debug\core.lib`, `Debug\common.lib`, `*.vcxproj`). Those artifacts are
-useful: they give us **reference binaries** for differential testing.
+Built with CMake, the C sources also produce **reference binaries**
+(per-game `*solver`, `fuzzpuzz`, `pearlbench`) that are useful for
+differential testing.
 
 ## 1. What the project is
 
@@ -191,8 +191,8 @@ CMake (`CMakeLists.txt`, `cmake/setup.cmake`, `cmake/platforms/*.cmake`):
 * Icons: generated from `icons/*.sav` via Perl scripts.
 * Assertions stay enabled in release builds (by design).
 
-Verified locally: the `Debug\*solver.exe`, `pearlbench.exe` and
-`fuzzpuzz.exe` reference binaries run.
+Verified with an MSVC build of this commit: the `*solver`, `pearlbench`
+and `fuzzpuzz` reference binaries run.
 
 ## 6. C idioms that shape the Rust design
 
