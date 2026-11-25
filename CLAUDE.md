@@ -34,6 +34,18 @@ architecture.
 - Untrusted input (game IDs, descriptions, moves, save files) never panics.
 - No `unsafe` outside the `c-oracle` crate.
 
+## Porting style: idiomatic Rust, identical behaviour
+Map C constructs to idiomatic Rust rather than transliterating them. Keep
+the *observable* behaviour identical (outputs, iteration order, PRNG calls,
+which element/index results come out), not the C shape. For example:
+- runtime "kinds" of one C struct → separate types sharing a trait
+  (`Dsf`/`MinDsf`/`FlipDsf` + `DisjointSets`), so misuse is a compile error;
+- `dup_*`/`*_copy`/`*_free` → `Clone`/`clone_from`/`Drop`;
+- out-parameters → tuples or structs; sentinel values → `Option`/enums;
+  error strings → `Result`; `void *ctx` callbacks → closures or traits;
+- idiomatic names (`find`, `union`, `reset`) with
+  `#[doc(alias = "c_function_name")]` so the C name stays searchable.
+
 ## Porting a game
 Follow "Porting recipe for one game" in `docs/porting-plan.md` §7.
 Reference the C source in module headers

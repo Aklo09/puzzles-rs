@@ -14,7 +14,7 @@ mod oracle {
 
     /// Upstream C files compiled into the oracle. Grows as more of the
     /// engine and the games are ported and need a reference.
-    const C_SOURCES: &[&str] = &["malloc.c", "random.c"];
+    const C_SOURCES: &[&str] = &["dsf.c", "malloc.c", "random.c"];
 
     pub fn build() {
         println!("cargo::rerun-if-env-changed=PUZZLES_C_SRC");

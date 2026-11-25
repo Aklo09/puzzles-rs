@@ -9,4 +9,5 @@
 //! Compatibility with the C version is a hard requirement for generation,
 //! solving, moves and save files; see `docs/porting-plan.md` (decision D1).
 
+pub mod dsf;
 pub mod random;

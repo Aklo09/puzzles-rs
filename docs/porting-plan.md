@@ -21,6 +21,7 @@ summarises them all.
 | — | C source for oracle tests | **Decided** 2026-11-25 | Git submodule of upstream at `third_party/puzzles-c`, pinned to `616da16` |
 | — | Fonts | **Decided** 2026-11-25 | Inter + JetBrains Mono (OFL), bundled, for both the puzzle canvas and the app UI; Noto Sans fallback added with localisation |
 | — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it on all 3 OSes |
+| — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
 
 ---
 
@@ -311,7 +312,7 @@ Implementations:
 | `random_state` | `RandomState` (bit-exact counter generator on `sha1_smol`; `random_upto` keeps the same rejection loop; deliberately not a `rand_core::RngCore`) |
 | `combi_ctx` | `itertools::Itertools::combinations` (same lexicographic order; oracle-checked) |
 | `bin2hex`/`hex2bin` | `hex` crate |
-| `DSF*` | `Dsf` struct with `new`, `new_min`, `new_flip` constructors (or a small enum of kinds) |
+| `DSF*` | three types `Dsf`, `MinDsf`, `FlipDsf` sharing the `DisjointSets` trait (`find`, `set_size`, `same_set`, `reset`); `union` per type (`FlipDsf::union` takes the flip); `dsf_copy`/`dsf_free` → `Clone`/`Drop` |
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` callback | `FnMut(vertex) -> impl Iterator<Item = usize>` or a neighbour trait |
@@ -851,11 +852,15 @@ at the top.
 **Progress**
 - **Phase 0: done** (2026-11-25). Workspace, `c-oracle`, `cargo xtask ci`;
   CI green on Ubuntu, Windows and macOS.
-- **Phase 1: in progress.** Done: `random` (`RandomState`, on
-  `sha1_smol`; parity with C for call sequences, encode/decode and counter
-  carries, property-tested). Next: `misc`, `dsf`, `tdq`, `findloop`,
-  `matching`, `laydomino`, `divvy`, `latin`, and the crate-backed `combi`,
-  `tree234` and `sort`.
+- **Phase 1: in progress.** Done:
+  - `random` (`RandomState`, on `sha1_smol`; parity with C for call
+    sequences, encode/decode and counter carries, property-tested);
+  - `dsf` (`Dsf`/`MinDsf`/`FlipDsf` + `DisjointSets`; parity with C for
+    canonical elements, sizes, minima and flips after arbitrary operation
+    sequences, copies and long chains).
+
+  Next: `misc`, `tdq`, `findloop`, `matching`, `laydomino`, `divvy`,
+  `latin`, and the crate-backed `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

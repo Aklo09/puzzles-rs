@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc ad1918fd86bf0fc0ffbc1183d1e5f32e1d2dfa2833e232189bf40df0240b3dcd # shrinks to len = 2, ops = [Union(7, 2)]
+cc 3634525238f857c10f1fe21913c594b05504a2506c47da34be486fb49da52646 # shrinks to len = 2, before = [], after = [(14, 7)]
+cc 18573bdfbe5b508ddef8e3299c1fbec2c3caf5b203ddc14869f0493d6509c454 # shrinks to len = 2, ops = [Union(1, 8)]
+cc 9c73d9cb4718111718c6f04db1172cef4d05a4bc0003a0c23acf1720c7d7a367 # shrinks to len = 2, ops = [Union(5, 32)]
