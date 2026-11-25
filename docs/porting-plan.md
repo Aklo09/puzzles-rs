@@ -20,7 +20,8 @@ summarises them all.
 | — | Optional C features | **Decided** 2026-11-25 | Printing (PostScript/PDF) and a web/wasm build come after release 1. Puzzle editors, picture generators and `unfinished/` puzzles are out of scope |
 | — | C source for oracle tests | **Decided** 2026-11-25 | Git submodule of upstream at `third_party/puzzles-c`, pinned to `616da16` |
 | — | Fonts | **Decided** 2026-11-25 | Inter + JetBrains Mono (OFL), bundled, for both the puzzle canvas and the app UI; Noto Sans fallback added with localisation |
-| — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it on all 3 OSes |
+| — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it |
+| — | CI frequency | **Decided** 2026-11-25 | PRs run Ubuntu + Windows; macOS on demand (manual run or a local Mac); docs-only PRs skip CI; no rerun after merge to `main` (see §6) |
 | — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
 
 ---
@@ -769,12 +770,22 @@ toolkit change.
    **`cargo xtask ci`** (format, clippy with `-D warnings`, all tests
    including the C oracle). `cargo xtask ci --no-oracle` skips the C tests
    on machines without a C compiler or the submodule.
-9. **CI matrix: `windows-latest`, `macos-latest`, `ubuntu-latest`**
-   (GitHub Actions, `.github/workflows/ci.yml`). Every OS runs
-   `cargo xtask ci`, *including the oracle*: MSVC on Windows, clang on
-   macOS/ARM and gcc on Linux, which is how platform or FMA differences
-   in the C reference would surface. Linux CI will also build the desktop
-   app once it exists (needs the usual X11/Wayland dev packages).
+9. **CI (GitHub Actions, `.github/workflows/ci.yml`)** runs
+   `cargo xtask ci`, *including the oracle*, kept frugal because macOS
+   runners are scarce:
+   - **pull requests:** `ubuntu-latest` (gcc) and `windows-latest` (MSVC);
+     PRs touching only docs (`docs/**`, `*.md`, `LICENCE`, `.claude/`,
+     `.agents/`) don't run;
+   - **macOS (clang on ARM) on demand:** a manual run
+     (`gh workflow run ci.yml --ref <branch>`, macOS on by default) or
+     `cargo xtask ci` on a Mac. Do it before merging changes where
+     platform differences can bite: float or drawing code, anything near
+     FMA, `c_ulong` or other C type widths;
+   - **no rerun after merging to `main`:** with squash merges the PR run
+     already tested the same code.
+
+   Linux CI will also build the desktop app once it exists (needs the
+   usual X11/Wayland dev packages).
 10. **Theme tests.** Palette parity (`resolve(PALETTE, Classic)` == C
    `game_colours()`), theme completeness and contrast lint (D7d), and
    resolver unit tests (inheritance, overrides, OKLab adaptation).

@@ -13,7 +13,7 @@ architecture.
 - Commit only when asked, with a descriptive message.
 - Branches: one short-lived branch per unit of work (`core/random`,
   `engine/midend`, `game/flip`, `ui/canvas`, experiments as `spike/...`),
-  merged into `main` by pull request once CI passes on all three OSes.
+  merged into `main` by pull request once CI passes (Ubuntu + Windows).
   Trivial fixes may go straight to `main`.
 - Work happens on Windows and macOS, and CI covers Linux too. Never add
   OS-specific paths or assumptions outside `cfg`-gated code.
@@ -58,4 +58,8 @@ cargo xtask ci              # fmt, clippy -D warnings, all tests incl. C oracle 
 cargo xtask ci --no-oracle  # same, without the C reference tests
 cargo insta test --review   # when snapshots change
 ```
-CI (GitHub Actions) runs `cargo xtask ci` on Windows, macOS and Linux.
+CI (GitHub Actions) runs `cargo xtask ci` on pull requests, on Ubuntu and
+Windows, and skips docs-only changes. macOS runs on demand only:
+`gh workflow run ci.yml --ref <branch>` or `cargo xtask ci` on a Mac. Ask
+for a macOS run before merging float, drawing or C-type-width-sensitive
+changes.
