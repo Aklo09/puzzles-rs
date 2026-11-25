@@ -6,6 +6,7 @@
 // unsafe. Every `unsafe` block states why its call is sound.
 #![allow(unsafe_code, reason = "FFI bindings to the C reference implementation")]
 
+mod divvy;
 mod dsf;
 mod findloop;
 mod laydomino;
@@ -14,6 +15,7 @@ mod misc;
 mod random;
 mod tdq;
 
+pub use divvy::c_divvy_rectangle_attempt;
 pub use dsf::{CDsf, CDsfKind};
 pub use findloop::CFindLoop;
 pub use laydomino::c_domino_layout;
