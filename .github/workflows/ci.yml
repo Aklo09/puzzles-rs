@@ -1,10 +1,26 @@
 name: CI
 
+# Kept deliberately frugal (macOS runners in particular are scarce):
+# - pull requests run Ubuntu and Windows;
+# - macOS runs only on demand: start the workflow by hand from the Actions
+#   tab, or `gh workflow run ci.yml --ref <branch>` (macOS on by default);
+# - pull requests that only touch documentation don't run at all;
+# - there is no rerun after merging to main: the PR run already tested the
+#   same code (squash merges), and a manual run is always available.
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "LICENCE"
+      - ".claude/**"
+      - ".agents/**"
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Also run on macOS
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -24,7 +40,7 @@ jobs:
       # since OS-specific differences are exactly what this matrix is for.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.macos && '["ubuntu-latest", "windows-latest", "macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -38,5 +54,5 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       # Same checks as locally: fmt, clippy (-D warnings), all tests
-      # including the C oracle (MSVC on Windows, clang on macOS, gcc on Linux).
+      # including the C oracle (MSVC on Windows, gcc on Linux, clang on macOS).
       - run: cargo xtask ci
