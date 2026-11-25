@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1e97336cd26221d1395cf05e59d70b3839ca0ead059da82e657c155c147934a0 # shrinks to ops = [ThickLine(0.0, 0.0, 0.0, 0.0, 0.0, 0)]
+cc 1cb87107e9c22f9cc491051665fbf03b10dba2d7fac840f22e2d6c089af950aa # shrinks to raw = 521, x = 0, y = 1, w = 1, h = 1, wrap = false, visible = Some(false)

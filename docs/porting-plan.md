@@ -25,6 +25,9 @@ summarises them all.
 | — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
 | — | Latin solver API | **Decided** 2026-11-25 | Games plug in through a `LatinRules` trait (`deduce` per difficulty level, `is_valid`, `branch` for a fresh per-guess context, `None` = shared, replacing `ctxnew`/`ctxfree`); `Deduction` and `Outcome` enums replace C's int codes and `diff_impossible`/`ambiguous`/`unfinished`; solver reasoning text is ported now through a `SolverLog` (verbosity + recursion depth, replacing the `solver_show_working`/`solver_recurse_depth` globals), text parity checked in Phase 6. Rejected: a struct of closures; C's int codes; adding messages only in Phase 6 |
 | — | tree234 container | **Decided** 2026-11-25 | `sorted-vec`'s `SortedSet` (re-exported as `puzzles_core::sorted_set`, plus a `find_rel` helper for `findrel234`/`findrelpos234`) where C uses positions; std `BTreeSet`/`BTreeMap` elsewhere. Rejected: `indexset` (O(log n), but far less established), a local Vec wrapper (D5 prefers a crate) |
+| — | Mid-end drawing | **Decided** 2026-11-25 | Deferred redraws: the mid-end is a state machine that never draws by itself; events mark it dirty and the front end calls `redraw(&mut dyn DrawingApi)` (once per frame). The draw state is built in `new_game`/`size` as in C, without a drawing: blitters are plain handles a game creates freely, and the canvas allocates their pixels on first use. C's `interactive` flag (`drawing != NULL`) is set when the mid-end is created. Game logic is unaffected (checked: `interpret_move` reads only layout fields set in `new_drawstate`/`set_size`); mid-end-level draw sequences may differ from C (UI), game-level draw traces still match (D1 level 2). Rejected: drawing passed per call; mid-end owning the canvas |
+| — | Mid-end ↔ front end | **Decided** 2026-11-25 | No callbacks: the seed is passed to `Midend::new`, and the front end reads `wants_timer()`, `is_dirty()` and a take-once game-ID-changed flag after each call (replacing `activate_timer`/`deactivate_timer`, `get_random_seed`, `midend_request_id_changes`). Rejected: a `FrontEnd` callback trait (callbacks can't use the borrowed mid-end, so they'd only set flags) |
+| — | Phase 2 order | **Decided** 2026-11-25 | One PR each: core types (Button, config, presets, `palette!`, `DrawingApi` + blitter handles + `Drawing` helpers, rest of `misc.c`); `Game` trait + nullgame + Flip (game-level parity); mid-end + `dyn Puzzle` + save files and prefs; theme crate + Classic; CLI; Fifteen; Guess. Rejected: mid-end first, shaped by nullgame only |
 
 ---
 
@@ -296,10 +299,15 @@ pub trait DrawingApi {
     fn clip(...); fn unclip(&mut self);
     fn start_draw(&mut self); fn end_draw(&mut self);
     fn status_bar(&mut self, text: &str) {}
-    fn blitter_new(&mut self, w: i32, h: i32) -> BlitterId; /* save/load/free */
+    fn blitter_save(&mut self, bl: &Blitter, x: i32, y: i32);   // allocates on first use
+    fn blitter_load(&mut self, bl: &Blitter, x: i32, y: i32);
     // print hooks with no-op defaults
 }
 ```
+Blitters are plain handles (`Blitter { id, w, h }`) that games create
+without a drawing (mid-end drawing decision): the draw state can then be
+built in `new_game`/`size` while drawing itself is deferred to
+`Midend::redraw`.
 Games receive `&mut Drawing<'_>`. This wrapper holds `&mut dyn DrawingApi`
 plus the helpers from `drawing.c`/`misc.c` (`draw_rect_outline`,
 `draw_text_outline`, `draw_rect_corners`, status-bar rewriting). Using
@@ -324,7 +332,7 @@ Implementations:
 | `obfuscate_bitmap(bmp, bits, decode)` | `misc::obfuscate_bitmap` / `misc::deobfuscate_bitmap`: two functions instead of a flag |
 | `bin2hex` / `hex2bin` | `misc::bytes_to_hex` (`hex` crate) / `misc::hex_to_bytes` (ported: C's leniency is observable in game IDs; `None` where C asserts) |
 | `getenv_bool(name, dflt)` | `misc::env_bool(name) -> Option<bool>`; callers `unwrap_or` their default (C's `-1` "no preference" is `None`) |
-| rest of `misc.c` | Phase 2, with the types they need: `move_cursor`/`button2label` (`Button`), drawing helpers (`Drawing`), `game_mkhighlight`/`colour_mix` (theme roles/derived colours, D7), `free_cfg`/`free_keys` (`Drop`), `fgetline`/`make_prefs_path`/`copy_left_justified` (mid-end and front end); `c2pos`/`c2diff`/`pos2c` with Netslide; `swap_regions`/`compare_integers` → `slice::swap`/`Ord::cmp` |
+| rest of `misc.c` | `move_cursor` → `misc::move_cursor` (returns `MoveResult`); `button2label` → `Button::label` (`None` where C calls `fatal`); `draw_rect_outline`/`draw_rect_corners`/`draw_text_outline` → `Drawing` methods; `game_mkhighlight`/`colour_mix` → theme roles and `DeriveOp::Highlight`/`Lowlight`/`Mix` (D7); `c2pos`/`c2diff`/`pos2c` with Netslide and Sixteen; `free_cfg`/`free_keys` → `Drop`; `fgetline`/`make_prefs_path`/`copy_left_justified` → mid-end and front end; `swap_regions`/`compare_integers` → `slice::swap`/`Ord::cmp` |
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; `sorted_set::SortedSet` (the `sorted-vec` crate) where positional ops are used: `add234` → `find_or_insert` (keeps an equal element already present, as C does), `index234` → indexing, `delpos234` → `remove_index`, `findrel234`/`findrelpos234` → `sorted_set::find_rel` (exact as long as at most one element compares equal to the key, which holds for every C caller). No tree234 port |
 | `arraysort` (`sort.c`) | `sort::heap_sort_by(&mut [T], cmp)`: C's heapsort ported, because Dominosa's comparators tie and heapsort orders ties its own way; `slice::sort_by` only where a comparator can't tie |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
@@ -376,7 +384,10 @@ Implementations:
 ## 4. Front end design (new, not a port)
 
 The front end is a new application built on the engine. The engine
-API (`Midend<G>` behind `dyn Puzzle`) is the only contract. It already
+API (`Midend<G>` behind `dyn Puzzle`) is the only contract. The mid-end
+never calls the front end: each frame the front end feeds it events,
+reads `wants_timer()`, `is_dirty()` and the game-ID-changed flag, and
+calls `redraw(&mut canvas)` when dirty (decision log). It already
 supports everything below: arbitrary window sizes, device pixel ratio,
 cursor location reporting (for keyboard/accessibility), serialisation
 (for session restore), and preferences.
@@ -924,8 +935,7 @@ at the top.
     which of two equal elements is kept), and `sort::heap_sort_by` for
     `arraysort` (identical order of tied elements).
 
-  Next: Phase 2 (engine and walking skeleton). Notes for later game
-  ports, found on the way:
+  Notes for later game ports, found on the way:
   - Lightup: C's `discount_clue` can call `new_combi(n + 1, n)` once a
     light already sits next to the clue, which trips C's `r <= n`
     assert; `combinations` just yields nothing there. Check when porting.
@@ -934,6 +944,17 @@ at the top.
     search enumerate all of them, in C as in Rust.
   - `qsort` call sites (10 games): libc's tie order differs between
     platforms, so check each comparator for ties (§3.5).
+
+- **Phase 2: in progress.** Done:
+  - core types (`button`, `config`, `preset`, `game` result types,
+    `palette` + `palette!`, `drawing` with blitter handles,
+    `Drawing` helpers, `NullDrawing`/`RecordingDrawing`, and
+    `misc::move_cursor`; parity with C for button codes and macros,
+    `button2label`, `move_cursor`, and random sequences of drawing calls
+    and helpers through `drawing.c` and a C recording drawing API, whose
+    trace text matches `RecordingDrawing` byte for byte).
+
+  Next: the `Game` trait with nullgame and Flip.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

@@ -26,35 +26,58 @@ void fatal(const char *fmt, ...)
 }
 
 /*
- * Link-time placeholders for functions referenced by compiled sources
- * (misc.c's drawing and colour helpers) but not exercised by any oracle
- * test yet. Each aborts loudly if called. Delete each one when the real
- * implementation (drawing.c, a recording drawing API, a front-end colour)
- * is compiled into the oracle in Phase 2.
+ * Link-time placeholders for functions referenced by compiled sources but
+ * not exercised by any oracle test yet. Each aborts loudly if called.
+ * Delete each one when the real implementation is compiled into the
+ * oracle: frontend_default_colour (misc.c's game_mkhighlight) with the
+ * theme work, midend_rewrite_statusbar (drawing.c's status_bar) with
+ * midend.c.
  */
 static void not_in_oracle(const char *name)
 {
     fatal("%s is not available in the oracle yet", name);
 }
 
-void draw_text(drawing *dr, int x, int y, int fonttype, int fontsize,
-               int align, int colour, const char *text)
-{
-    not_in_oracle("draw_text");
-}
-
-void draw_line(drawing *dr, int x1, int y1, int x2, int y2, int colour)
-{
-    not_in_oracle("draw_line");
-}
-
-void draw_polygon(drawing *dr, const int *coords, int npoints,
-                  int fillcolour, int outlinecolour)
-{
-    not_in_oracle("draw_polygon");
-}
-
 void frontend_default_colour(frontend *fe, float *output)
 {
     not_in_oracle("frontend_default_colour");
+}
+
+char *midend_rewrite_statusbar(midend *me, const char *text)
+{
+    not_in_oracle("midend_rewrite_statusbar");
+    return NULL;
+}
+
+/*
+ * The button classification macros of puzzles.h, as functions Rust can
+ * call: bit 0 IS_MOUSE_DOWN, 1 IS_MOUSE_DRAG, 2 IS_MOUSE_RELEASE,
+ * 3 IS_CURSOR_MOVE, 4 IS_CURSOR_SELECT, 5 IS_UI_FAKE_KEY.
+ */
+int oracle_button_class(int button)
+{
+    return (IS_MOUSE_DOWN(button) ? 1 : 0) |
+        (IS_MOUSE_DRAG(button) ? 2 : 0) |
+        (IS_MOUSE_RELEASE(button) ? 4 : 0) |
+        (IS_CURSOR_MOVE(button) ? 8 : 0) |
+        (IS_CURSOR_SELECT(button) ? 16 : 0) |
+        (IS_UI_FAKE_KEY(button) ? 32 : 0);
+}
+
+/*
+ * move_cursor's result as a number: 0 MOVE_UNUSED, 1 MOVE_NO_EFFECT,
+ * 2 MOVE_UI_UPDATE (it never returns a real move).
+ */
+int oracle_move_cursor(int button, int *x, int *y, int maxw, int maxh,
+                       bool wrap, bool *visible)
+{
+    char *ret = move_cursor(button, x, y, maxw, maxh, wrap, visible);
+    if (ret == MOVE_UNUSED)
+        return 0;
+    if (ret == MOVE_NO_EFFECT)
+        return 1;
+    if (ret == MOVE_UI_UPDATE)
+        return 2;
+    fatal("move_cursor returned an unexpected pointer");
+    return -1;
 }

@@ -13,6 +13,7 @@ publish = false
 # Internal and external crates are added here when a crate first uses them
 # (dependency policy, docs/porting-plan.md §5); Cargo warns on unused entries.
 puzzles-core = { path = "crates/puzzles-core" }
+bitflags = "2.13"
 cc = "1.11"
 hex = "0.4"
 itertools = "0.15"

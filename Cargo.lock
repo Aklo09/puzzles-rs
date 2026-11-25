@@ -283,6 +283,7 @@ version = "0.1.0"
 name = "puzzles-core"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "hex",
  "sha1_smol",
  "sorted-vec",
