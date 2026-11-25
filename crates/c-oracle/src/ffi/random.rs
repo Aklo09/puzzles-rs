@@ -8,7 +8,7 @@ use super::sfree;
 
 /// Opaque C `random_state` (defined privately in `random.c`).
 #[repr(C)]
-struct RandomStateC {
+pub(super) struct RandomStateC {
     _data: [u8; 0],
     _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
@@ -28,6 +28,15 @@ unsafe extern "C" {
 /// seed into a game. The Rust port must reproduce its output exactly.
 pub struct CRandom {
     state: NonNull<RandomStateC>,
+}
+
+impl CRandom {
+    /// The underlying C state, for bindings in sibling modules that take a
+    /// `random_state *` (e.g. `shuffle`). Borrowing `self` mutably keeps
+    /// the state alive and unaliased for the duration of the call.
+    pub(super) fn as_mut_ptr(&mut self) -> *mut RandomStateC {
+        self.state.as_ptr()
+    }
 }
 
 impl CRandom {

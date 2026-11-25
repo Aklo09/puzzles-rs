@@ -114,6 +114,25 @@ impl RandomState {
         }
     }
 
+    /// Shuffles `items` in place (C's `shuffle`, in `misc.c`).
+    ///
+    /// A Fisher-Yates shuffle from the back: for each position `i` from
+    /// `len - 1` down to 1, swap with `upto(i + 1)`. Same draws in the same
+    /// order as C, so generators that shuffle produce the same puzzles.
+    ///
+    /// # Panics
+    /// If `items` has `2^28` elements or more (see [`upto`](Self::upto)).
+    pub fn shuffle<T>(&mut self, items: &mut [T]) {
+        for i in (1..items.len()).rev() {
+            // Lengths past u32 saturate, so `upto` reports them as too large.
+            let limit = u32::try_from(i + 1).unwrap_or(u32::MAX);
+            let j = self.upto(limit) as usize;
+            // C skips the swap when j == i; swapping an element with itself
+            // is a no-op, so the result is the same.
+            items.swap(i, j);
+        }
+    }
+
     /// Encodes the full state as lowercase hex (C's
     /// `random_state_encode`): seed buffer, data buffer, then the read
     /// position, two hex digits each (122 characters).
@@ -195,6 +214,10 @@ impl RandomState {
 mod tests {
     use super::*;
 
+    /// `0..10` shuffled with seed `"p2r"` by the C code, recorded from the
+    /// oracle (`misc_parity.rs` re-checks it against C).
+    const GOLDEN_SHUFFLE_P2R_10: [u32; 10] = [0, 6, 3, 5, 9, 2, 8, 1, 7, 4];
+
     /// Same golden values as the C oracle's test: recorded from the C code,
     /// first five also derived independently with Python's `hashlib`.
     #[test]
@@ -271,6 +294,32 @@ mod tests {
     #[should_panic(expected = "limit too large")]
     fn upto_panics_on_limit_of_2_pow_28() {
         RandomState::new(b"").upto(1 << 28);
+    }
+
+    #[test]
+    fn shuffle_is_a_permutation() {
+        let mut items: Vec<u32> = (0..50).collect();
+        RandomState::new(b"perm").shuffle(&mut items);
+        let mut sorted = items.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..50).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn shuffle_of_zero_or_one_items_draws_nothing() {
+        let mut rng = RandomState::new(b"none");
+        let before = rng.clone();
+        rng.shuffle::<u8>(&mut []);
+        rng.shuffle(&mut [42]);
+        assert_eq!(rng, before);
+    }
+
+    /// Recorded from the C `shuffle`; also checked live by the oracle.
+    #[test]
+    fn shuffle_matches_c_golden_order() {
+        let mut items: Vec<u32> = (0..10).collect();
+        RandomState::new(b"p2r").shuffle(&mut items);
+        assert_eq!(items, GOLDEN_SHUFFLE_P2R_10);
     }
 
     #[test]
