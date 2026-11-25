@@ -10,4 +10,4 @@
 mod ffi;
 
 #[cfg(feature = "oracle")]
-pub use ffi::{CRandom, sha1};
+pub use ffi::{CDsf, CDsfKind, CRandom, sha1};

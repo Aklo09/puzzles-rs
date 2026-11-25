@@ -1,13 +1,10 @@
-//! Raw declarations of the C functions and safe wrappers around them.
-
-// The workspace denies `unsafe_code`; this module is the one place allowed
-// to opt out, because calling C is unavoidably unsafe. Every `unsafe` block
-// states why its call is sound.
-#![allow(unsafe_code, reason = "FFI bindings to the C reference implementation")]
+//! Bindings to `random.c`: the random number generator and SHA-1.
 
 use std::ffi::{CStr, CString, c_char, c_int, c_ulong, c_void};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ptr::NonNull;
+
+use super::sfree;
 
 /// Opaque C `random_state` (defined privately in `random.c`).
 #[repr(C)]
@@ -23,7 +20,6 @@ unsafe extern "C" {
     fn random_free(state: *mut RandomStateC);
     fn random_state_encode(state: *mut RandomStateC) -> *mut c_char;
     fn random_state_decode(input: *const c_char) -> *mut RandomStateC;
-    fn sfree(p: *mut c_void);
     #[link_name = "SHA_Simple"]
     fn sha_simple(p: *const c_void, len: c_int, output: *mut u8);
 }
