@@ -1,0 +1,11 @@
+[package]
+name = "puzzles-theme"
+description = "Theme model, TOML loading and palette resolution for the puzzle collection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
