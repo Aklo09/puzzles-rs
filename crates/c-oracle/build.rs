@@ -18,12 +18,14 @@ mod oracle {
         "divvy.c",
         "dsf.c",
         "findloop.c",
+        "latin.c",
         "laydomino.c",
         "malloc.c",
         "matching.c",
         "misc.c",
         "random.c",
         "tdq.c",
+        "tree234.c",
     ];
 
     pub fn build() {

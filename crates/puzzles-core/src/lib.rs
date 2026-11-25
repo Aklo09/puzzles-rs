@@ -12,8 +12,10 @@
 pub mod divvy;
 pub mod dsf;
 pub mod findloop;
+pub mod latin;
 pub mod laydomino;
 pub mod matching;
 pub mod misc;
 pub mod random;
+pub mod solver_log;
 pub mod todo_queue;

@@ -1,0 +1,220 @@
+=== a
+1.. .23 .23 
+.23 .23 1.. 
+.23 123 .23 
+
+positional elimination, 1 in row 3:
+  placing 1 at (2,3)
+1.. .23 .23 
+.23 .23 1.. 
+.23 1.. .23 
+
+recursing on (2,1) [2 or 3]
+guessing 2 at (2,1)
+1.. .2. ..3 
+.23 ..3 1.. 
+.23 1.. .23 
+
+    positional elimination, 3 in row 1:
+      placing 3 at (3,1)
+1.. .2. ..3 
+.23 ..3 1.. 
+.23 1.. .2. 
+
+    positional elimination, 2 in row 2:
+      placing 2 at (1,2)
+1.. .2. ..3 
+.2. ..3 1.. 
+..3 1.. .2. 
+
+    positional elimination, 3 in row 2:
+      placing 3 at (2,2)
+1.. .2. ..3 
+.2. ..3 1.. 
+..3 1.. .2. 
+
+    positional elimination, 2 in row 3:
+      placing 2 at (3,3)
+1.. .2. ..3 
+.2. ..3 1.. 
+..3 1.. .2. 
+
+    positional elimination, 3 in row 3:
+      placing 3 at (1,3)
+1.. .2. ..3 
+.2. ..3 1.. 
+..3 1.. .2. 
+
+    one solution found:
+      1 2 3
+      2 3 1
+      3 1 2
+retracting 2 at (2,1)
+guessing 3 at (2,1)
+1.. ..3 .2. 
+.23 .2. 1.. 
+.23 1.. .23 
+
+    positional elimination, 2 in row 1:
+      placing 2 at (3,1)
+1.. ..3 .2. 
+.23 .2. 1.. 
+.23 1.. ..3 
+
+    positional elimination, 3 in row 2:
+      placing 3 at (1,2)
+1.. ..3 .2. 
+..3 .2. 1.. 
+.2. 1.. ..3 
+
+    positional elimination, 2 in row 2:
+      placing 2 at (2,2)
+1.. ..3 .2. 
+..3 .2. 1.. 
+.2. 1.. ..3 
+
+    positional elimination, 2 in row 3:
+      placing 2 at (1,3)
+1.. ..3 .2. 
+..3 .2. 1.. 
+.2. 1.. ..3 
+
+    positional elimination, 3 in row 3:
+      placing 3 at (3,3)
+1.. ..3 .2. 
+..3 .2. 1.. 
+.2. 1.. ..3 
+
+    one solution found:
+      1 3 2
+      3 2 1
+      2 1 3
+retracting 3 at (2,1)
+multiple solutions found
+=== ret 11 grid 1 2 3 2 3 1 3 1 2
+=== b
+positional elimination, 4 in row 2:
+  placing 4 at (1,2)
+positional elimination, 2 in row 5:
+  placing 2 at (2,5)
+positional elimination, 2 in row 1:
+  placing 2 at (6,1)
+positional elimination, 5 in row 5:
+  placing 5 at (3,5)
+positional elimination, 1 in column 4:
+  placing 1 at (4,2)
+numeric elimination at (3,6):
+  placing 1 at (3,6)
+set elimination, column 6:
+  ruling out 5 at (6,3)
+  ruling out 5 at (6,4)
+forcing chain, 1 at ends of (6,4)-(1,4)-(1,6)-(1,1)-(3,1)-(5,1)
+  ruling out 1 at (5,4)
+positional elimination, 1 in row 4:
+  placing 1 at (6,4)
+positional elimination, 3 in row 4:
+  placing 3 at (1,4)
+positional elimination, 3 in row 1:
+  placing 3 at (3,1)
+positional elimination, 4 in row 1:
+  placing 4 at (5,1)
+positional elimination, 1 in row 1:
+  placing 1 at (2,1)
+positional elimination, 6 in row 1:
+  placing 6 at (1,1)
+positional elimination, 1 in row 3:
+  placing 1 at (5,3)
+positional elimination, 3 in row 3:
+  placing 3 at (6,3)
+positional elimination, 4 in row 3:
+  placing 4 at (3,3)
+positional elimination, 5 in row 3:
+  placing 5 at (2,3)
+positional elimination, 5 in row 2:
+  placing 5 at (6,2)
+positional elimination, 6 in row 2:
+  placing 6 at (2,2)
+positional elimination, 5 in row 4:
+  placing 5 at (5,4)
+positional elimination, 5 in row 6:
+  placing 5 at (1,6)
+positional elimination, 6 in row 6:
+  placing 6 at (6,6)
+one solution found:
+  6 1 3 5 4 2
+  4 6 2 1 3 5
+  2 5 4 6 1 3
+  3 4 6 2 5 1
+  1 2 5 3 6 4
+  5 3 1 4 2 6
+=== ret 2 grid 6 1 3 5 4 2 4 6 2 1 3 5 2 5 4 6 1 3 3 4 6 2 5 1 1 2 5 3 6 4 5 3 1 4 2 6
+=== c1
+positional elimination, 1 in row 3:
+  placing 1 at (2,3)
+positional elimination, 1 in row 4:
+  placing 1 at (6,4)
+positional elimination, 2 in column 1:
+  placing 2 at (1,5)
+positional elimination, 2 in column 2:
+  placing 2 at (2,4)
+positional elimination, 5 in row 4:
+  placing 5 at (3,4)
+positional elimination, 5 in column 2:
+  placing 5 at (2,1)
+set elimination, column 4:
+  ruling out 5 at (4,5)
+no solution (unfinished) found
+=== ret 12 grid 1 5 0 0 2 0 6 4 3 0 1 0 3 1 0 0 0 4 4 2 5 6 3 1 2 6 1 0 0 0 5 3 0 1 0 0
+=== c3
+positional elimination, 1 in row 3:
+  placing 1 at (2,3)
+positional elimination, 1 in row 4:
+  placing 1 at (6,4)
+positional elimination, 2 in column 1:
+  placing 2 at (1,5)
+positional elimination, 2 in column 2:
+  placing 2 at (2,4)
+positional elimination, 5 in row 4:
+  placing 5 at (3,4)
+positional elimination, 5 in column 2:
+  placing 5 at (2,1)
+set elimination, column 4:
+  ruling out 5 at (4,5)
+forcing chain, 4 at ends of (5,6)-(5,3)-(4,3)-(3,3)-(3,1)
+  ruling out 4 at (3,6)
+positional elimination, 4 in row 6:
+  placing 4 at (5,6)
+positional elimination, 4 in row 5:
+  placing 4 at (4,5)
+positional elimination, 4 in row 1:
+  placing 4 at (3,1)
+positional elimination, 6 in row 1:
+  placing 6 at (6,1)
+positional elimination, 3 in row 1:
+  placing 3 at (4,1)
+positional elimination, 3 in row 5:
+  placing 3 at (6,5)
+positional elimination, 5 in row 5:
+  placing 5 at (5,5)
+positional elimination, 5 in row 3:
+  placing 5 at (4,3)
+positional elimination, 5 in row 2:
+  placing 5 at (6,2)
+positional elimination, 2 in row 2:
+  placing 2 at (4,2)
+positional elimination, 2 in row 3:
+  placing 2 at (3,3)
+positional elimination, 6 in row 3:
+  placing 6 at (5,3)
+positional elimination, 2 in row 6:
+  placing 2 at (6,6)
+positional elimination, 6 in row 6:
+  placing 6 at (3,6)
+one solution found:
+  1 5 4 3 2 6
+  6 4 3 2 1 5
+  3 1 2 5 6 4
+  4 2 5 6 3 1
+  2 6 1 4 5 3
+  5 3 6 1 4 2
+=== ret 2 grid 1 5 4 3 2 6 6 4 3 2 1 5 3 1 2 5 6 4 4 2 5 6 3 1 2 6 1 4 5 3 5 3 6 1 4 2
