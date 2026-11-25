@@ -8,12 +8,14 @@
 
 mod dsf;
 mod findloop;
+mod matching;
 mod misc;
 mod random;
 mod tdq;
 
 pub use dsf::{CDsf, CDsfKind};
 pub use findloop::CFindLoop;
+pub use matching::{CMatching, c_matching, c_matching_with_scratch};
 pub use misc::{c_bin2hex, c_hex2bin, c_n_times_root_k, c_obfuscate_bitmap, c_shuffle};
 pub use random::{CRandom, sha1};
 pub use tdq::CTdq;
