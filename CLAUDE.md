@@ -11,6 +11,10 @@ architecture.
   with a recommendation and trade-offs. The user decides, and the outcome
   is recorded in the plan's decision log.
 - Commit only when asked, with a descriptive message.
+- Branches: one short-lived branch per unit of work (`core/random`,
+  `engine/midend`, `game/flip`, `ui/canvas`, experiments as `spike/...`),
+  merged into `main` by pull request once CI passes on all three OSes.
+  Trivial fixes may go straight to `main`.
 - Work happens on Windows and macOS, and CI covers Linux too. Never add
   OS-specific paths or assumptions outside `cfg`-gated code.
 

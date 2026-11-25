@@ -5,7 +5,7 @@
 // states why its call is sound.
 #![allow(unsafe_code, reason = "FFI bindings to the C reference implementation")]
 
-use std::ffi::{c_char, c_int, c_ulong, c_void};
+use std::ffi::{CStr, CString, c_char, c_int, c_ulong, c_void};
 use std::marker::{PhantomData, PhantomPinned};
 use std::ptr::NonNull;
 
@@ -21,6 +21,9 @@ unsafe extern "C" {
     fn random_bits(state: *mut RandomStateC, bits: c_int) -> c_ulong;
     fn random_upto(state: *mut RandomStateC, limit: c_ulong) -> c_ulong;
     fn random_free(state: *mut RandomStateC);
+    fn random_state_encode(state: *mut RandomStateC) -> *mut c_char;
+    fn random_state_decode(input: *const c_char) -> *mut RandomStateC;
+    fn sfree(p: *mut c_void);
     #[link_name = "SHA_Simple"]
     fn sha_simple(p: *const c_void, len: c_int, output: *mut u8);
 }
@@ -46,6 +49,47 @@ impl CRandom {
         Self {
             state: NonNull::new(state).expect("random_new returned NULL"),
         }
+    }
+
+    /// Recreates a generator from an encoded state, like C's
+    /// `random_state_decode`.
+    ///
+    /// # Panics
+    /// If `input` contains a NUL byte (C strings can't hold one).
+    #[must_use]
+    pub fn decode(input: &str) -> Self {
+        let input = CString::new(input).expect("input contains a NUL byte");
+        // SAFETY: `input` is a valid NUL-terminated string that outlives the
+        // call; `random_state_decode` only reads it and returns a fresh
+        // allocation (smalloc aborts instead of returning NULL).
+        let state = unsafe { random_state_decode(input.as_ptr()) };
+        Self {
+            state: NonNull::new(state).expect("random_state_decode returned NULL"),
+        }
+    }
+
+    /// Encodes the state as hex, like C's `random_state_encode`.
+    ///
+    /// # Panics
+    /// If the C code returns NULL or non-UTF-8 text (it writes only hex
+    /// digits, so neither happens).
+    #[must_use]
+    pub fn encode(&self) -> String {
+        // SAFETY: `self.state` is a live state owned by `self`; the function
+        // only reads it and returns a fresh NUL-terminated string from
+        // `dupstr`, which we own.
+        let encoded = unsafe { random_state_encode(self.state.as_ptr()) };
+        assert!(!encoded.is_null(), "random_state_encode returned NULL");
+        // SAFETY: `encoded` is a valid NUL-terminated string (checked
+        // non-NULL above) that stays alive until we free it below.
+        let text = unsafe { CStr::from_ptr(encoded) }
+            .to_str()
+            .expect("random_state_encode wrote non-UTF-8")
+            .to_owned();
+        // SAFETY: `encoded` came from `dupstr` (smalloc), is freed exactly
+        // once, and isn't used afterwards.
+        unsafe { sfree(encoded.cast()) };
+        text
     }
 
     /// Returns the next `bits` random bits, like C's `random_bits`.
