@@ -23,6 +23,7 @@ summarises them all.
 | — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it |
 | — | CI frequency | **Decided** 2026-11-25 | PRs run Ubuntu + Windows; macOS on demand (manual run or a local Mac); docs-only PRs skip CI; no rerun after merge to `main` (see §6) |
 | — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
+| — | Latin solver API | **Decided** 2026-11-25 | Games plug in through a `LatinRules` trait (`deduce` per difficulty level, `is_valid`, `branch` for a fresh per-guess context, `None` = shared, replacing `ctxnew`/`ctxfree`); `Deduction` and `Outcome` enums replace C's int codes and `diff_impossible`/`ambiguous`/`unfinished`; solver reasoning text is ported now through a `SolverLog` (verbosity + recursion depth, replacing the `solver_show_working`/`solver_recurse_depth` globals), text parity checked in Phase 6. Rejected: a struct of closures; C's int codes; adding messages only in Phase 6 |
 
 ---
 
@@ -327,6 +328,9 @@ Implementations:
 | `matching` | `Matcher` (reusable buffers, replacing C's scratch space): `run(nl, nr, \|l\| neighbours_of(l), rng: Option<&mut RandomState>) -> usize` with a closure instead of `int **adjlists` + `adjsizes`; `left_to_right()`/`right_to_left()` return `&[Option<usize>]` instead of `-1`-filled out-arrays; `witness() -> (Vec<bool>, Vec<bool>)`. The randomised search permutes the matcher's own copy of the lists, not the caller's (no caller reuses them); same draws as C |
 | `divvy_rectangle` / `divvy_rectangle_attempt` | `divvy::divvy_rectangle(w, h, k, &mut RandomState) -> Dsf` and `divvy::try_divvy_rectangle(..) -> Option<Dsf>` (`None` where C returns NULL); the result is a `Dsf` built with C's unions, so representatives match C too (Solo numbers jigsaw blocks by them); C's `-1`/`-3`/`-2` markers become `Owner`/`Visit` enums; an empty rectangle gives an empty `Dsf` where C asserts |
 | `domino_layout` / `domino_layout_prealloc` | `laydomino::domino_layout(w, h, &mut RandomState) -> Vec<usize>` (partner square per square, itself for an odd area's leftover); one function, since `_prealloc`'s caller-supplied buffers are only an allocation detail; an empty grid gives an empty layout where C asserts |
+| `latin.c` solver | `latin::LatinSolver` (owns its grid; `new` = `latin_solver_alloc`, `solve` = `latin_solver_main`, `into_grid` writes back); games implement `LatinRules` (see the decision log); `Deduction`/`Outcome` enums; `Levels` struct for the `diff_*` arguments; scratch space is per call. Strategies stay `pub` (`elim`, `set`, `forcing`, `diff_simple`, `diff_set`) with C's raw cube offsets, since game deductions use them |
+| `latin_generate` / `_rect` / `latin_check` | `latin::generate` / `generate_rect` (on `Matcher`, same draws); `latin_check` → `has_latin_counts` (true = is Latin, the negation; like C it checks symbol counts only) |
+| `solver_show_working` / `solver_recurse_depth` globals | `solver_log::SolverLog` (verbosity, depth, collected text), carried by each solver (`LatinSolver::log`) |
 | `config_item` union | `enum ConfigValue { String(String), Choices { names: Vec<&'static str>, selected: usize }, Bool(bool) }` |
 | `preset_menu` tree | `PresetMenu<P> { entries: Vec<PresetEntry<P>> }` with `enum PresetEntry { Preset{title, params, id}, Submenu{title, menu, id} }` |
 | `midend_serialise(write cb)` | `fn serialise(&self, w: &mut impl io::Write) -> io::Result<()>` |
@@ -900,9 +904,17 @@ at the top.
     success or failure, every square's representative and the generator
     state, on every rectangle up to 8 × 8 with every divisor of its area,
     random shapes up to 12 × 12, Solo jigsaw and Palisade sizes, the
-    retry loop, and runs of failing attempts).
+    retry loop, and runs of failing attempts);
+  - `latin` (`LatinSolver` + `LatinRules`, `generate`, `generate_rect`,
+    `has_latin_counts`; parity with C for generated squares and rectangles
+    with the generator state, every strategy step on random candidate
+    cubes, and full solves with test game rules, comparing outcome, grid,
+    cube and the exact sequence of game callbacks, including fresh or
+    shared contexts while guessing; a coverage test checks every solver
+    path is reached). Its `SolverLog` text matches C's
+    `STANDALONE_SOLVER` output byte for byte on a checked-in fixture.
 
-  Next: `latin`, and the crate-backed
+  Next: the crate-backed
   `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;

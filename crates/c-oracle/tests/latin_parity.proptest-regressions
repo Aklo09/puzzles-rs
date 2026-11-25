@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc acc38cfa8e88da534ad624260e06fea57cf116a3aa2d70f1b585103e3454bbfd # shrinks to (o, seed, keep, ops) = (4, [86, 13], [false, false, true, false, true, false, false, false, false, false, false, true, false, false, false, true], [Forcing])
+cc 7a512ae1b8a32e7361556c4e1bad72749c3564202fce3e3b419179255e1df5fe # shrinks to (o, seed, keep, ops) = (4, [], [false, false, false, false, false, true, false, false, true, true, false, false, false, true], [RuleOut(0, 0, 2), DiffSet(false)])
+cc 830becef6be43dd1516165c1a0fafccc710475ec373822402643e99421a1e629 # shrinks to o = 4, seed = [10, 12, 164, 5]
+cc 9105fe06785bb4200d059b2fa307d4d4c1aba3f38b8649c07c01ae08b5e11bf8 # shrinks to o = 4, seed = [70, 67, 123]
