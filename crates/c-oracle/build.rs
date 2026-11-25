@@ -17,6 +17,7 @@ mod oracle {
     const C_SOURCES: &[&str] = &[
         "combi.c",
         "divvy.c",
+        "drawing.c",
         "dsf.c",
         "findloop.c",
         "latin.c",
@@ -34,15 +35,20 @@ mod oracle {
         println!("cargo::rerun-if-env-changed=PUZZLES_C_SRC");
         let c_dir = c_source_dir();
 
-        let shim = PathBuf::from("csrc/shim.c");
-        println!("cargo::rerun-if-changed={}", shim.display());
+        let shims = [
+            PathBuf::from("csrc/shim.c"),
+            PathBuf::from("csrc/recorder.c"),
+        ];
+        for shim in &shims {
+            println!("cargo::rerun-if-changed={}", shim.display());
+        }
         println!(
             "cargo::rerun-if-changed={}",
             c_dir.join("puzzles.h").display()
         );
 
         let mut build = cc::Build::new();
-        build.include(&c_dir).file(&shim).warnings(false);
+        build.include(&c_dir).files(&shims).warnings(false);
         for source in C_SOURCES {
             let path = c_dir.join(source);
             println!("cargo::rerun-if-changed={}", path.display());

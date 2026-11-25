@@ -1,14 +1,21 @@
 //! Port of the engine-independent parts of `third_party/puzzles-c/misc.c`
 //! (upstream 616da16).
 //!
-//! The rest of `misc.c` arrives with the types it needs: cursor movement
-//! and button labels with the engine's `Button` type, the drawing helpers
-//! with the drawing interface, `game_mkhighlight`/`colour_mix` as theme
-//! roles and derived colours, `free_*` as `Drop`. `shuffle` is
+//! Elsewhere: `button2label` is [`Button::label`]; the drawing helpers
+//! (`draw_rect_outline`, `draw_rect_corners`, `draw_text_outline`) are
+//! methods of [`Drawing`](crate::drawing::Drawing); `game_mkhighlight` and
+//! `colour_mix` are theme roles and derived colours (D7); `c2pos`,
+//! `c2diff` and `pos2c` arrive with Netslide and Sixteen; `free_*` are
+//! `Drop`; `shuffle` is
 //! [`RandomState::shuffle`](crate::random::RandomState::shuffle);
-//! `swap_regions` and `compare_integers` are `slice::swap` and `Ord::cmp`.
+//! `swap_regions` and `compare_integers` are `slice::swap` and `Ord::cmp`;
+//! `fgetline`, `make_prefs_path` and `copy_left_justified` belong to front
+//! ends.
 
 use std::ffi::OsStr;
+
+use crate::button::{Button, ButtonKind, CursorKey};
+use crate::game::MoveResult;
 
 /// Obfuscates the first `bits` bits of `bitmap` in place (C's
 /// `obfuscate_bitmap(bmp, bits, false)`).
@@ -209,6 +216,55 @@ fn parse_env_bool(value: &OsStr) -> bool {
     )
 }
 
+/// Moves a cursor at `(x, y)` one step for an arrow key, within a
+/// `max_w` × `max_h` grid, wrapping round if `wrap` and stopping at the
+/// edges otherwise (C's `move_cursor`).
+///
+/// Returns [`MoveResult::Unused`] for anything but an unmodified arrow
+/// key, [`MoveResult::UiUpdate`] if the cursor moved or was just made
+/// visible (via `visible`, if given), and [`MoveResult::NoEffect`]
+/// otherwise.
+///
+/// # Panics
+/// If `wrap` is set and the grid is empty (C divides by zero).
+pub fn move_cursor<M>(
+    button: Button,
+    x: &mut i32,
+    y: &mut i32,
+    max_w: i32,
+    max_h: i32,
+    wrap: bool,
+    visible: Option<&mut bool>,
+) -> MoveResult<M> {
+    // C compares the whole code, so a modified arrow key is unused.
+    let (dx, dy) = match (button.kind, button.mods.is_empty()) {
+        (ButtonKind::Cursor(CursorKey::Up), true) => (0, -1),
+        (ButtonKind::Cursor(CursorKey::Down), true) => (0, 1),
+        (ButtonKind::Cursor(CursorKey::Right), true) => (1, 0),
+        (ButtonKind::Cursor(CursorKey::Left), true) => (-1, 0),
+        _ => return MoveResult::Unused,
+    };
+    let (ox, oy) = (*x, *y);
+    if wrap {
+        *x = (*x + dx + max_w) % max_w;
+        *y = (*y + dy + max_h) % max_h;
+    } else {
+        *x = (*x + dx).max(0).min(max_w - 1);
+        *y = (*y + dy).max(0).min(max_h - 1);
+    }
+    if let Some(visible) = visible
+        && !*visible
+    {
+        *visible = true;
+        return MoveResult::UiUpdate;
+    }
+    if (*x, *y) == (ox, oy) {
+        MoveResult::NoEffect
+    } else {
+        MoveResult::UiUpdate
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,5 +411,51 @@ mod tests {
     #[test]
     fn env_bool_of_unset_variable_is_none() {
         assert_eq!(env_bool("PUZZLES_RS_TEST_SURELY_UNSET_VARIABLE"), None);
+    }
+
+    #[test]
+    fn move_cursor_steps_clamps_and_wraps() {
+        use crate::button::{Modifiers, MouseAction, MouseButton};
+        let up = Button::cursor(CursorKey::Up);
+        let right = Button::cursor(CursorKey::Right);
+        let (mut x, mut y) = (0, 0);
+        assert_eq!(
+            move_cursor::<()>(up, &mut x, &mut y, 3, 2, false, None),
+            MoveResult::NoEffect
+        );
+        assert_eq!((x, y), (0, 0));
+        assert_eq!(
+            move_cursor::<()>(up, &mut x, &mut y, 3, 2, true, None),
+            MoveResult::UiUpdate
+        );
+        assert_eq!((x, y), (0, 1));
+        assert_eq!(
+            move_cursor::<()>(right, &mut x, &mut y, 3, 2, false, None),
+            MoveResult::UiUpdate
+        );
+        assert_eq!((x, y), (1, 1));
+
+        let mut visible = false;
+        let left = Button::cursor(CursorKey::Left);
+        let (mut x, mut y) = (0, 0);
+        let r = move_cursor::<()>(left, &mut x, &mut y, 3, 2, false, Some(&mut visible));
+        assert_eq!((r, visible, x), (MoveResult::UiUpdate, true, 0));
+        let r = move_cursor::<()>(left, &mut x, &mut y, 3, 2, false, Some(&mut visible));
+        assert_eq!(r, MoveResult::NoEffect);
+
+        // A hidden cursor that moves is also made visible.
+        let mut visible = false;
+        let r = move_cursor::<()>(right, &mut x, &mut y, 3, 2, false, Some(&mut visible));
+        assert_eq!((r, visible, x), (MoveResult::UiUpdate, true, 1));
+
+        for other in [
+            Button::key('a'),
+            Button::cursor(CursorKey::Select),
+            Button::mouse(MouseButton::Left, MouseAction::Press),
+            up.with(Modifiers::SHIFT),
+        ] {
+            let r = move_cursor::<()>(other, &mut x, &mut y, 3, 2, false, None);
+            assert_eq!(r, MoveResult::Unused, "{other:?}");
+        }
     }
 }

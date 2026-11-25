@@ -8,6 +8,7 @@
 
 mod collections;
 mod divvy;
+mod drawing;
 mod dsf;
 mod findloop;
 mod latin;
@@ -19,6 +20,7 @@ mod tdq;
 
 pub use collections::{CTree, TreeItem, c_arraysort_by_key, c_combinations};
 pub use divvy::c_divvy_rectangle_attempt;
+pub use drawing::{CRecorder, c_button_class, c_button2label, c_move_cursor};
 pub use dsf::{CDsf, CDsfKind};
 pub use findloop::CFindLoop;
 pub use latin::{
