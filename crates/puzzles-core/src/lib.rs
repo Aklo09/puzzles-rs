@@ -9,6 +9,7 @@
 //! Compatibility with the C version is a hard requirement for generation,
 //! solving, moves and save files; see `docs/porting-plan.md` (decision D1).
 
+pub mod divvy;
 pub mod dsf;
 pub mod findloop;
 pub mod laydomino;

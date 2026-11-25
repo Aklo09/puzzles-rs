@@ -6,7 +6,7 @@ use std::ptr::NonNull;
 
 /// Opaque C `DSF` (defined privately in `dsf.c`).
 #[repr(C)]
-struct DsfC {
+pub(super) struct DsfC {
     _data: [u8; 0],
     _marker: PhantomData<(*mut u8, PhantomPinned)>,
 }
@@ -68,6 +68,20 @@ impl CDsf {
         Self {
             dsf: NonNull::new(dsf).expect("dsf_new returned NULL"),
             kind,
+            len,
+        }
+    }
+
+    /// Takes ownership of a plain dsf of `len` elements that C allocated
+    /// (for example one returned by `divvy_rectangle_attempt`).
+    ///
+    /// # Safety
+    /// `dsf` must be a live dsf from `dsf_new(len)` (or an equivalent
+    /// constructor) that nothing else owns or frees.
+    pub(super) unsafe fn from_raw_plain(dsf: NonNull<DsfC>, len: usize) -> Self {
+        Self {
+            dsf,
+            kind: CDsfKind::Plain,
             len,
         }
     }

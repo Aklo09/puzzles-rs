@@ -325,6 +325,7 @@ Implementations:
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` | `LoopFinder` (reusable buffers): `run(n, \|v\| neighbours_of(v))` with a closure returning an iterator instead of the `void *ctx` first/next callback; `has_loop()`, `is_loop_edge(u, v)` (C's "non-edge counts as loop edge" quirk kept), `is_bridge(u, v) -> Option<(usize, usize)>` instead of a bool + two out-parameters |
 | `matching` | `Matcher` (reusable buffers, replacing C's scratch space): `run(nl, nr, \|l\| neighbours_of(l), rng: Option<&mut RandomState>) -> usize` with a closure instead of `int **adjlists` + `adjsizes`; `left_to_right()`/`right_to_left()` return `&[Option<usize>]` instead of `-1`-filled out-arrays; `witness() -> (Vec<bool>, Vec<bool>)`. The randomised search permutes the matcher's own copy of the lists, not the caller's (no caller reuses them); same draws as C |
+| `divvy_rectangle` / `divvy_rectangle_attempt` | `divvy::divvy_rectangle(w, h, k, &mut RandomState) -> Dsf` and `divvy::try_divvy_rectangle(..) -> Option<Dsf>` (`None` where C returns NULL); the result is a `Dsf` built with C's unions, so representatives match C too (Solo numbers jigsaw blocks by them); C's `-1`/`-3`/`-2` markers become `Owner`/`Visit` enums; an empty rectangle gives an empty `Dsf` where C asserts |
 | `domino_layout` / `domino_layout_prealloc` | `laydomino::domino_layout(w, h, &mut RandomState) -> Vec<usize>` (partner square per square, itself for an odd area's leftover); one function, since `_prealloc`'s caller-supplied buffers are only an allocation detail; an empty grid gives an empty layout where C asserts |
 | `config_item` union | `enum ConfigValue { String(String), Choices { names: Vec<&'static str>, selected: usize }, Bool(bool) }` |
 | `preset_menu` tree | `PresetMenu<P> { entries: Vec<PresetEntry<P>> }` with `enum PresetEntry { Preset{title, params, id}, Submenu{title, menu, id} }` |
@@ -894,9 +895,14 @@ at the top.
     generation and upstream's 256 + 256 subset graph);
   - `laydomino` (`domino_layout`; parity with C for the layout and the
     generator state on every grid up to 16 × 16, random grids up to
-    24 × 24, layout sequences from one generator and large grids).
+    24 × 24, layout sequences from one generator and large grids);
+  - `divvy` (`divvy_rectangle`/`try_divvy_rectangle`; parity with C for
+    success or failure, every square's representative and the generator
+    state, on every rectangle up to 8 × 8 with every divisor of its area,
+    random shapes up to 12 × 12, Solo jigsaw and Palisade sizes, the
+    retry loop, and runs of failing attempts).
 
-  Next: `divvy`, `latin`, and the crate-backed
+  Next: `latin`, and the crate-backed
   `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
