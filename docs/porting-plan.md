@@ -323,7 +323,7 @@ Implementations:
 | rest of `misc.c` | Phase 2, with the types they need: `move_cursor`/`button2label` (`Button`), drawing helpers (`Drawing`), `game_mkhighlight`/`colour_mix` (theme roles/derived colours, D7), `free_cfg`/`free_keys` (`Drop`), `fgetline`/`make_prefs_path`/`copy_left_justified` (mid-end and front end); `c2pos`/`c2diff`/`pos2c` with Netslide; `swap_regions`/`compare_integers` → `slice::swap`/`Ord::cmp` |
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
-| `findloop` callback | `FnMut(vertex) -> impl Iterator<Item = usize>` or a neighbour trait |
+| `findloop` | `LoopFinder` (reusable buffers): `run(n, \|v\| neighbours_of(v))` with a closure returning an iterator instead of the `void *ctx` first/next callback; `has_loop()`, `is_loop_edge(u, v)` (C's "non-edge counts as loop edge" quirk kept), `is_bridge(u, v) -> Option<(usize, usize)>` instead of a bool + two out-parameters |
 | `config_item` union | `enum ConfigValue { String(String), Choices { names: Vec<&'static str>, selected: usize }, Bool(bool) }` |
 | `preset_menu` tree | `PresetMenu<P> { entries: Vec<PresetEntry<P>> }` with `enum PresetEntry { Preset{title, params, id}, Submenu{title, menu, id} }` |
 | `midend_serialise(write cb)` | `fn serialise(&self, w: &mut impl io::Write) -> io::Result<()>` |
@@ -619,7 +619,7 @@ generator would change every puzzle. So:
 | `thiserror` | error enums | — |
 | `bitflags` | `Modifiers`, `GameFlags` | — |
 | `log` | the C `debug()` macro | — |
-| *ported, not replaced* | random generator logic, `dsf`, `tdq`, `matching`, `latin`, `divvy`, `laydomino`, `loopgen`, `findloop`, `grid` + Penrose/Hat/Spectre, `sort` call sites with possible ties | output is either one of many valid answers (would change puzzles) or tightly bound to C semantics. `findloop` (bridge detection) has a unique answer, but solvers also need the component sizes on each side, and it runs in solver inner loops. `petgraph` is the candidate, so in Phase 1 we check whether its bridge-finding can supply component sizes cheaply; port if not |
+| *ported, not replaced* | random generator logic, `dsf`, `tdq`, `matching`, `latin`, `divvy`, `laydomino`, `loopgen`, `findloop`, `grid` + Penrose/Hat/Spectre, `sort` call sites with possible ties | output is either one of many valid answers (would change puzzles) or tightly bound to C semantics. `findloop` (bridge detection) has a unique answer, but **`petgraph` was evaluated and rejected** (2026-11-25): 0.8's `algo::bridges` returns only bridge edges (no per-side component sizes, which Dominosa needs), needs a graph built from the callback on every call (Dominosa's solver loop), and treats a repeated neighbour as a loop where C doesn't. Ported instead |
 
 #### Themes (`puzzles-theme`)
 | Crate | Provides |
@@ -816,7 +816,7 @@ app. At acceptance, its draw-trace oracle test is converted to a snapshot (D1).
 | Phase | Content | Exit criteria |
 |---|---|---|
 | **0. Scaffolding** | workspace, lints, toolchain pin, `third_party/puzzles-c` submodule at `616da16`, `c-oracle` crate (C `random`/SHA-1 bindings + shim build), `cargo xtask ci`, **3-OS CI matrix** | oracle tests (SHA-1 vectors, golden `random_bits`/`random_upto` sequences) pass on Windows, macOS and Linux |
-| **1. Core algorithms** | port: random (on `sha1_smol`), misc, dsf, tdq, findloop (or `petgraph`, see §5), matching, laydomino, divvy, latin. Adopt crates: `itertools` for combi, std collections + sorted-vec for tree234, `slice::sort_by` for sort.c; verify each against C | parity with C on property-generated inputs (including the crate-backed replacements); ports of `auxiliary/*-test.c` |
+| **1. Core algorithms** | port: random (on `sha1_smol`), misc, dsf, tdq, findloop (`petgraph` evaluated and rejected, see §5), matching, laydomino, divvy, latin. Adopt crates: `itertools` for combi, std collections + sorted-vec for tree234, `slice::sort_by` for sort.c; verify each against C | parity with C on property-generated inputs (including the crate-backed replacements); ports of `auxiliary/*-test.c` |
 | **2. Engine + walking skeleton** | the rest of `misc.c` (see the mapping table in §3.3), `Game` trait (**with `PALETTE` specs and DPR-aware sizing from day one**), `palette!` macro, `puzzles-theme` (model, resolver, Classic generated from the oracle), `Drawing`, `Midend<G>` (undo/redo, anim timing, game-ID/seed parsing, serialise/deserialise, presets, prefs), erased `dyn Puzzle`, `puzzles-cli` (`generate`, `solve`, `roundtrip`), **nullgame + flip + fifteen + guess** | the 3 games pass the full "done" bar headlessly, including palette parity |
 | **3. Desktop front end: foundation** | eframe app on all 3 OSes: tiny-skia canvas + text + blitters, **fluid resize + HiDPI**, **themes (Classic/Light/Dark/Follow-system, user TOML + hot reload)**, **full-screen + immersive mode**, toolbar + per-OS shortcuts, simple game library, presets/custom-params/game-ID/seed dialogs generated from `ConfigItem`s, per-game prefs, save/load (incl. drag-and-drop), session restore, timer, status overlay | the Phase-2 games are playable and look right in every theme on Windows, macOS and Linux |
 | **4a. Simple games** | sixteen, twiddle, flood, pegs, samegame, blackbox, netslide, cube, inertia, mosaic, unruly | done bar |
@@ -881,18 +881,20 @@ at the top.
   - `misc`, engine-independent part (`RandomState::shuffle`, bitmap
     obfuscation, lenient hex, `n_times_root_k`, `env_bool`; parity with C
     including exhaustive `n_times_root_k` over ±20,000 × k 1–12). The rest
-    of `misc.c` moves to Phase 2.
+    of `misc.c` moves to Phase 2;
+  - `findloop` (`LoopFinder`, ported after rejecting `petgraph`; parity with
+    C for the loop flag and every pair's loop-edge and bridge answers,
+    including side sizes, on random and grid-shaped graphs).
 
-  Next: `findloop`, `matching`, `laydomino`, `divvy`, `latin`, and the
-  crate-backed `combi`, `tree234` and `sort`.
+  Next: `matching`, `laydomino`, `divvy`, `latin`, and the crate-backed
+  `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
 still check it.
 
 **Deferred by design (decided when first needed, under the D5 policy):**
-the sorted-vec crate for positional tree234 ops; `petgraph` vs a port
-for `findloop`; the icon font; `criterion` vs `divan`; `fluent` vs
+the sorted-vec crate for positional tree234 ops; the icon font; `criterion` vs `divan`; `fluent` vs
 `rust-i18n`; the Markdown viewer crate. Swapping one for an equivalent
 crate is a normal review item, not a new decision.
 

@@ -9,8 +9,7 @@
 #[cfg(feature = "oracle")]
 mod ffi;
 
+// Everything public in `ffi` (the `C*` wrappers and `c_*` functions); the
+// list is maintained in `ffi/mod.rs`.
 #[cfg(feature = "oracle")]
-pub use ffi::{
-    CDsf, CDsfKind, CRandom, CTdq, c_bin2hex, c_hex2bin, c_n_times_root_k, c_obfuscate_bitmap,
-    c_shuffle, sha1,
-};
+pub use ffi::*;
