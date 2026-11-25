@@ -1,0 +1,20 @@
+[package]
+name = "c-oracle"
+description = "Test-only bindings to the original C puzzle code, used as a reference oracle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Compiles the upstream C sources (third_party/puzzles-c) and exposes them.
+# Needs a C toolchain and the initialised submodule; without the feature this
+# crate is empty, so a plain `cargo build`/`cargo test` works anywhere.
+oracle = ["dep:cc"]
+
+[build-dependencies]
+cc = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -39,8 +39,8 @@ Never copy the C code into the repo.
 
 ## Checks (run before calling work done)
 ```
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo nextest run --workspace
+cargo xtask ci              # fmt, clippy -D warnings, all tests incl. C oracle (same as CI)
+cargo xtask ci --no-oracle  # same, without the C reference tests
 cargo insta test --review   # when snapshots change
 ```
+CI (GitHub Actions) runs `cargo xtask ci` on Windows, macOS and Linux.

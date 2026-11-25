@@ -20,6 +20,7 @@ summarises them all.
 | — | Optional C features | **Decided** 2026-11-25 | Printing (PostScript/PDF) and a web/wasm build come after release 1. Puzzle editors, picture generators and `unfinished/` puzzles are out of scope |
 | — | C source for oracle tests | **Decided** 2026-11-25 | Git submodule of upstream at `third_party/puzzles-c`, pinned to `616da16` |
 | — | Fonts | **Decided** 2026-11-25 | Inter + JetBrains Mono (OFL), bundled, for both the puzzle canvas and the app UI; Noto Sans fallback added with localisation |
+| — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it on all 3 OSes |
 
 ---
 
@@ -760,13 +761,17 @@ toolkit change.
    `pedantic = warn` (with a short, documented allow-list for
    cast-heavy ported code: `cast_possible_truncation`, `cast_sign_loss`,
    `similar_names`, `too_many_lines`, used via `#[expect]` where local),
-   and `unsafe_code = forbid` (except `c-oracle`). CI command:
-   `cargo clippy --all-targets --all-features --locked -- -D warnings`,
-   plus `cargo fmt --check` and `cargo test`.
-9. **CI matrix: `windows-latest`, `macos-latest`, `ubuntu-latest`.** Every
-   OS runs build, clippy, tests and snapshots. The oracle job runs on at
-   least Linux and Windows. Linux CI also builds the desktop app (needs the
-   usual X11/Wayland dev packages) so platform breakage shows up early.
+   and `unsafe_code = deny`, with exactly one opt-out: the FFI module of
+   `c-oracle`. One command runs every check, locally and in CI:
+   **`cargo xtask ci`** (format, clippy with `-D warnings`, all tests
+   including the C oracle). `cargo xtask ci --no-oracle` skips the C tests
+   on machines without a C compiler or the submodule.
+9. **CI matrix: `windows-latest`, `macos-latest`, `ubuntu-latest`**
+   (GitHub Actions, `.github/workflows/ci.yml`). Every OS runs
+   `cargo xtask ci`, *including the oracle*: MSVC on Windows, clang on
+   macOS/ARM and gcc on Linux, which is how platform or FMA differences
+   in the C reference would surface. Linux CI will also build the desktop
+   app once it exists (needs the usual X11/Wayland dev packages).
 10. **Theme tests.** Palette parity (`resolve(PALETTE, Classic)` == C
    `game_colours()`), theme completeness and contrast lint (D7d), and
    resolver unit tests (inheritance, overrides, OKLab adaptation).
@@ -789,7 +794,7 @@ app. At acceptance, its draw-trace oracle test is converted to a snapshot (D1).
 
 | Phase | Content | Exit criteria |
 |---|---|---|
-| **0. Scaffolding** | workspace, lints, toolchain pin, `third_party/puzzles-c` submodule at `616da16`, `c-oracle` crate with `oracle_random_bits` + shim build, CI script (`cargo xtask ci` or a `justfile`), **3-OS CI matrix** | oracle test passes for `random_bits` on Windows + Linux; workspace builds on all 3 OSes |
+| **0. Scaffolding** | workspace, lints, toolchain pin, `third_party/puzzles-c` submodule at `616da16`, `c-oracle` crate (C `random`/SHA-1 bindings + shim build), `cargo xtask ci`, **3-OS CI matrix** | oracle tests (SHA-1 vectors, golden `random_bits`/`random_upto` sequences) pass on Windows, macOS and Linux |
 | **1. Core algorithms** | port: random (on `sha1_smol`), misc, dsf, tdq, findloop (or `petgraph`, see §5), matching, laydomino, divvy, latin. Adopt crates: `itertools` for combi, std collections + sorted-vec for tree234, `slice::sort_by` for sort.c; verify each against C | parity with C on property-generated inputs (including the crate-backed replacements); ports of `auxiliary/*-test.c` |
 | **2. Engine + walking skeleton** | `Game` trait (**with `PALETTE` specs and DPR-aware sizing from day one**), `palette!` macro, `puzzles-theme` (model, resolver, Classic generated from the oracle), `Drawing`, `Midend<G>` (undo/redo, anim timing, game-ID/seed parsing, serialise/deserialise, presets, prefs), erased `dyn Puzzle`, `puzzles-cli` (`generate`, `solve`, `roundtrip`), **nullgame + flip + fifteen + guess** | the 3 games pass the full "done" bar headlessly, including palette parity |
 | **3. Desktop front end: foundation** | eframe app on all 3 OSes: tiny-skia canvas + text + blitters, **fluid resize + HiDPI**, **themes (Classic/Light/Dark/Follow-system, user TOML + hot reload)**, **full-screen + immersive mode**, toolbar + per-OS shortcuts, simple game library, presets/custom-params/game-ID/seed dialogs generated from `ConfigItem`s, per-game prefs, save/load (incl. drag-and-drop), session restore, timer, status overlay | the Phase-2 games are playable and look right in every theme on Windows, macOS and Linux |

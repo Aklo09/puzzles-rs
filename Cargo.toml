@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "xtask"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,9 +12,12 @@ publish = false
 [workspace.dependencies]
 # Internal and external crates are added here when a crate first uses them
 # (dependency policy, docs/porting-plan.md §5); Cargo warns on unused entries.
+cc = "1.11"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# `deny` rather than `forbid` so that exactly one place can opt out: the FFI
+# module of the test-only `c-oracle` crate. No other crate may allow it.
+unsafe_code = "deny"
 missing_docs = "warn"
 future_incompatible = { level = "warn", priority = -1 }
 nonstandard_style = { level = "deny", priority = -1 }

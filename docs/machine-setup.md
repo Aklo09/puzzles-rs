@@ -3,17 +3,24 @@
 > Temporary note for moving work between the Windows and macOS machines.
 > To be removed once this is covered by a proper contributor guide.
 
-## After cloning (or pulling a commit that adds/bumps the submodule)
+## Cloning
 
-Fetch the upstream C sources used by the oracle tests:
+Clone with the submodule in one step:
+
+```sh
+git clone --recurse-submodules https://github.com/Aklo09/puzzles-rs.git
+```
+
+For an existing clone, or after pulling a commit that adds or bumps the
+submodule, fetch the upstream C sources used by the oracle tests:
 
 ```sh
 git submodule update --init
 ```
 
 The submodule (`third_party/puzzles-c`, upstream pinned to `616da16`) is
-added in Phase 0. It's only needed for the `oracle` feature; a plain
-`cargo build` / `cargo test` works without it.
+only needed for the C oracle tests; `cargo xtask ci --no-oracle`, a plain
+`cargo build` and `cargo test` work without it.
 
 ## Cargo tools (once per machine)
 

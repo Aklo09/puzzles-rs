@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: ${{ matrix.os }}
+    strategy:
+      # Run every OS to the end: a failure on one shouldn't hide the others,
+      # since OS-specific differences are exactly what this matrix is for.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The C reference sources (third_party/puzzles-c) for the oracle tests.
+          submodules: true
+
+      # Installs the toolchain and components pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Same checks as locally: fmt, clippy (-D warnings), all tests
+      # including the C oracle (MSVC on Windows, clang on macOS, gcc on Linux).
+      - run: cargo xtask ci

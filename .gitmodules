@@ -1,0 +1,3 @@
+[submodule "third_party/puzzles-c"]
+	path = third_party/puzzles-c
+	url = https://git.tartarus.org/simon/puzzles.git
