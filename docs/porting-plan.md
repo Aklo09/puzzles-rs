@@ -112,7 +112,7 @@ puzzles-rs/
 │  │  └─ src/
 │  │     ├─ lib.rs
 │  │     ├─ random.rs          # PRNG on top of sha1_smol (bit-exact with C)
-│  │     ├─ misc.rs            # obfuscate, shuffle (C-compatible), cursor helpers
+│  │     ├─ misc.rs            # obfuscation, lenient hex, n_times_root_k, env_bool
 │  │     ├─ dsf.rs, todo_queue.rs (tdq.c), divvy.rs,   # ported (D5 exception)
 │  │     ├─ findloop.rs,                               # ported (D5 exception)
 │  │     ├─ matching.rs, laydomino.rs, latin.rs        # ported (D5 exception)
@@ -316,6 +316,11 @@ Implementations:
 | `bin2hex`/`hex2bin` | `hex` crate |
 | `DSF*` | three types `Dsf`, `MinDsf`, `FlipDsf` sharing the `DisjointSets` trait (`find`, `set_size`, `same_set`, `reset`); `union` per type (`FlipDsf::union` takes the flip); `dsf_copy`/`dsf_free` → `Clone`/`Drop` |
 | `tdq` | `TodoQueue` (`todo_queue` module): `VecDeque` + membership flags; `tdq_remove`'s `-1` → `pop() -> Option<usize>`, so loops become `while let Some(k) = todo.pop()` |
+| `shuffle(void *, n, eltsize, rs)` | `RandomState::shuffle<T>(&mut [T])`: generic instead of `void *` + size; same draws as C |
+| `obfuscate_bitmap(bmp, bits, decode)` | `misc::obfuscate_bitmap` / `misc::deobfuscate_bitmap`: two functions instead of a flag |
+| `bin2hex` / `hex2bin` | `misc::bytes_to_hex` (`hex` crate) / `misc::hex_to_bytes` (ported: C's leniency is observable in game IDs; `None` where C asserts) |
+| `getenv_bool(name, dflt)` | `misc::env_bool(name) -> Option<bool>`; callers `unwrap_or` their default (C's `-1` "no preference" is `None`) |
+| rest of `misc.c` | Phase 2, with the types they need: `move_cursor`/`button2label` (`Button`), drawing helpers (`Drawing`), `game_mkhighlight`/`colour_mix` (theme roles/derived colours, D7), `free_cfg`/`free_keys` (`Drop`), `fgetline`/`make_prefs_path`/`copy_left_justified` (mid-end and front end); `c2pos`/`c2diff`/`pos2c` with Netslide; `swap_regions`/`compare_integers` → `slice::swap`/`Ord::cmp` |
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` callback | `FnMut(vertex) -> impl Iterator<Item = usize>` or a neighbour trait |
@@ -812,7 +817,7 @@ app. At acceptance, its draw-trace oracle test is converted to a snapshot (D1).
 |---|---|---|
 | **0. Scaffolding** | workspace, lints, toolchain pin, `third_party/puzzles-c` submodule at `616da16`, `c-oracle` crate (C `random`/SHA-1 bindings + shim build), `cargo xtask ci`, **3-OS CI matrix** | oracle tests (SHA-1 vectors, golden `random_bits`/`random_upto` sequences) pass on Windows, macOS and Linux |
 | **1. Core algorithms** | port: random (on `sha1_smol`), misc, dsf, tdq, findloop (or `petgraph`, see §5), matching, laydomino, divvy, latin. Adopt crates: `itertools` for combi, std collections + sorted-vec for tree234, `slice::sort_by` for sort.c; verify each against C | parity with C on property-generated inputs (including the crate-backed replacements); ports of `auxiliary/*-test.c` |
-| **2. Engine + walking skeleton** | `Game` trait (**with `PALETTE` specs and DPR-aware sizing from day one**), `palette!` macro, `puzzles-theme` (model, resolver, Classic generated from the oracle), `Drawing`, `Midend<G>` (undo/redo, anim timing, game-ID/seed parsing, serialise/deserialise, presets, prefs), erased `dyn Puzzle`, `puzzles-cli` (`generate`, `solve`, `roundtrip`), **nullgame + flip + fifteen + guess** | the 3 games pass the full "done" bar headlessly, including palette parity |
+| **2. Engine + walking skeleton** | the rest of `misc.c` (see the mapping table in §3.3), `Game` trait (**with `PALETTE` specs and DPR-aware sizing from day one**), `palette!` macro, `puzzles-theme` (model, resolver, Classic generated from the oracle), `Drawing`, `Midend<G>` (undo/redo, anim timing, game-ID/seed parsing, serialise/deserialise, presets, prefs), erased `dyn Puzzle`, `puzzles-cli` (`generate`, `solve`, `roundtrip`), **nullgame + flip + fifteen + guess** | the 3 games pass the full "done" bar headlessly, including palette parity |
 | **3. Desktop front end: foundation** | eframe app on all 3 OSes: tiny-skia canvas + text + blitters, **fluid resize + HiDPI**, **themes (Classic/Light/Dark/Follow-system, user TOML + hot reload)**, **full-screen + immersive mode**, toolbar + per-OS shortcuts, simple game library, presets/custom-params/game-ID/seed dialogs generated from `ConfigItem`s, per-game prefs, save/load (incl. drag-and-drop), session restore, timer, status overlay | the Phase-2 games are playable and look right in every theme on Windows, macOS and Linux |
 | **4a. Simple games** | sixteen, twiddle, flood, pegs, samegame, blackbox, netslide, cube, inertia, mosaic, unruly | done bar |
 | **4b. Union-find family** | net, slant, range, filling, palisade, signpost, map, bridges, dominosa, tents, magnets, rect, galaxies, lightup, undead, tracks, pattern, untangle | done bar |
@@ -872,10 +877,14 @@ at the top.
     canonical elements, sizes, minima and flips after arbitrary operation
     sequences, copies and long chains);
   - `tdq` (`TodoQueue`; parity with C for pop order after arbitrary
-    push/pop/fill sequences and repeated ring-buffer wraparounds).
+    push/pop/fill sequences and repeated ring-buffer wraparounds);
+  - `misc`, engine-independent part (`RandomState::shuffle`, bitmap
+    obfuscation, lenient hex, `n_times_root_k`, `env_bool`; parity with C
+    including exhaustive `n_times_root_k` over ±20,000 × k 1–12). The rest
+    of `misc.c` moves to Phase 2.
 
-  Next: `misc`, `findloop`, `matching`, `laydomino`, `divvy`, `latin`,
-  and the crate-backed `combi`, `tree234` and `sort`.
+  Next: `findloop`, `matching`, `laydomino`, `divvy`, `latin`, and the
+  crate-backed `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
