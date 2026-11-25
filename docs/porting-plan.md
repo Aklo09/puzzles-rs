@@ -24,6 +24,7 @@ summarises them all.
 | — | CI frequency | **Decided** 2026-11-25 | PRs run Ubuntu + Windows; macOS on demand (manual run or a local Mac); docs-only PRs skip CI; no rerun after merge to `main` (see §6) |
 | — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
 | — | Latin solver API | **Decided** 2026-11-25 | Games plug in through a `LatinRules` trait (`deduce` per difficulty level, `is_valid`, `branch` for a fresh per-guess context, `None` = shared, replacing `ctxnew`/`ctxfree`); `Deduction` and `Outcome` enums replace C's int codes and `diff_impossible`/`ambiguous`/`unfinished`; solver reasoning text is ported now through a `SolverLog` (verbosity + recursion depth, replacing the `solver_show_working`/`solver_recurse_depth` globals), text parity checked in Phase 6. Rejected: a struct of closures; C's int codes; adding messages only in Phase 6 |
+| — | tree234 container | **Decided** 2026-11-25 | `sorted-vec`'s `SortedSet` (re-exported as `puzzles_core::sorted_set`, plus a `find_rel` helper for `findrel234`/`findrelpos234`) where C uses positions; std `BTreeSet`/`BTreeMap` elsewhere. Rejected: `indexset` (O(log n), but far less established), a local Vec wrapper (D5 prefers a crate) |
 
 ---
 
@@ -117,8 +118,10 @@ puzzles-rs/
 │  │     ├─ dsf.rs, todo_queue.rs (tdq.c), divvy.rs,   # ported (D5 exception)
 │  │     ├─ findloop.rs,                               # ported (D5 exception)
 │  │     ├─ matching.rs, laydomino.rs, latin.rs        # ported (D5 exception)
-│  │     │                     # combi → itertools, tree234 → std/sorted-vec,
-│  │     │                     # sort.c → slice::sort_by with a capturing closure
+│  │     ├─ sort.rs            # arraysort's heapsort (ported: tie order)
+│  │     ├─ sorted_set.rs      # tree234 → sorted-vec SortedSet + find_rel
+│  │     ├─ solver_log.rs      # SolverLog (C's solver_show_working)
+│  │     │                     # combi → itertools (no wrapper)
 │  │     ├─ grid/              # grid.rs, penrose.rs, hat.rs, spectre.rs, tables
 │  │     ├─ loopgen.rs
 │  │     ├─ game.rs            # `Game` trait, Button, MoveResult, ConfigItem, PresetMenu
@@ -322,7 +325,8 @@ Implementations:
 | `bin2hex` / `hex2bin` | `misc::bytes_to_hex` (`hex` crate) / `misc::hex_to_bytes` (ported: C's leniency is observable in game IDs; `None` where C asserts) |
 | `getenv_bool(name, dflt)` | `misc::env_bool(name) -> Option<bool>`; callers `unwrap_or` their default (C's `-1` "no preference" is `None`) |
 | rest of `misc.c` | Phase 2, with the types they need: `move_cursor`/`button2label` (`Button`), drawing helpers (`Drawing`), `game_mkhighlight`/`colour_mix` (theme roles/derived colours, D7), `free_cfg`/`free_keys` (`Drop`), `fgetline`/`make_prefs_path`/`copy_left_justified` (mid-end and front end); `c2pos`/`c2diff`/`pos2c` with Netslide; `swap_regions`/`compare_integers` → `slice::swap`/`Ord::cmp` |
-| `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
+| `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; `sorted_set::SortedSet` (the `sorted-vec` crate) where positional ops are used: `add234` → `find_or_insert` (keeps an equal element already present, as C does), `index234` → indexing, `delpos234` → `remove_index`, `findrel234`/`findrelpos234` → `sorted_set::find_rel` (exact as long as at most one element compares equal to the key, which holds for every C caller). No tree234 port |
+| `arraysort` (`sort.c`) | `sort::heap_sort_by(&mut [T], cmp)`: C's heapsort ported, because Dominosa's comparators tie and heapsort orders ties its own way; `slice::sort_by` only where a comparator can't tie |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` | `LoopFinder` (reusable buffers): `run(n, \|v\| neighbours_of(v))` with a closure returning an iterator instead of the `void *ctx` first/next callback; `has_loop()`, `is_loop_edge(u, v)` (C's "non-edge counts as loop edge" quirk kept), `is_bridge(u, v) -> Option<(usize, usize)>` instead of a bool + two out-parameters |
 | `matching` | `Matcher` (reusable buffers, replacing C's scratch space): `run(nl, nr, \|l\| neighbours_of(l), rng: Option<&mut RandomState>) -> usize` with a closure instead of `int **adjlists` + `adjsizes`; `left_to_right()`/`right_to_left()` return `&[Option<usize>]` instead of `-1`-filled out-arrays; `witness() -> (Vec<bool>, Vec<bool>)`. The randomised search permutes the matcher's own copy of the lists, not the caller's (no caller reuses them); same draws as C |
@@ -621,7 +625,7 @@ generator would change every puzzle. So:
 |---|---|---|
 | `sha1_smol` (**decided**) | SHA-1 under the PRNG and `obfuscate_bitmap` | digest is unique; the PRNG logic on top (`random_bits`, `random_upto`) is ported; oracle-checked in Phase 0 |
 | `itertools` | `combi.c` (`combinations`), plus general iterator helpers | same lexicographic order as C's `next_combi`; oracle-checked |
-| `BTreeSet`/`BTreeMap` (std) + `sorted-vec` (or similar) | `tree234.c`. Std collections where only add/del/find/count are used; a sorted-vec crate for the 9 files that use positional ops (`index234`, `delpos234`): flip, latin, loopgen, net, netslide, pegs, penrose, spectre, untangle | a sorted set's order is unique for a given comparator; oracle-checked; benchmark untangle/loopgen in Phase 1 |
+| `BTreeSet`/`BTreeMap` (std) + `sorted-vec` (**decided**) | `tree234.c`. Std collections where only add/del/find/count are used; `sorted-vec` for the 9 files that use positional ops (`index234`, `delpos234`): flip, latin, loopgen, net, netslide, pegs, penrose, spectre, untangle | a sorted set's order is unique for a given comparator; oracle-checked against `tree234.c`; benchmark untangle/loopgen when they are ported |
 | `hex` | `bin2hex`/`hex2bin` | format is unique |
 | `thiserror` | error enums | — |
 | `bitflags` | `Modifiers`, `GameFlags` | — |
@@ -877,7 +881,7 @@ at the top.
 **Progress**
 - **Phase 0: done** (2026-11-25). Workspace, `c-oracle`, `cargo xtask ci`;
   CI green on Ubuntu, Windows and macOS.
-- **Phase 1: in progress.** Done:
+- **Phase 1: done** (2026-11-25):
   - `random` (`RandomState`, on `sha1_smol`; parity with C for call
     sequences, encode/decode and counter carries, property-tested);
   - `dsf` (`Dsf`/`MinDsf`/`FlipDsf` + `DisjointSets`; parity with C for
@@ -912,17 +916,31 @@ at the top.
     cube and the exact sequence of game callbacks, including fresh or
     shared contexts while guessing; a coverage test checks every solver
     path is reached). Its `SolverLog` text matches C's
-    `STANDALONE_SOLVER` output byte for byte on a checked-in fixture.
+    `STANDALONE_SOLVER` output byte for byte on a checked-in fixture;
+  - crate-backed replacements: `itertools::combinations` for `combi.c`
+    (identical for every r of n up to 12), `sorted_set` (`sorted-vec` +
+    `find_rel`) for `tree234.c` (identical results and contents after
+    every step of random add/delete/index/relation sequences, including
+    which of two equal elements is kept), and `sort::heap_sort_by` for
+    `arraysort` (identical order of tied elements).
 
-  Next: the crate-backed
-  `combi`, `tree234` and `sort`.
+  Next: Phase 2 (engine and walking skeleton). Notes for later game
+  ports, found on the way:
+  - Lightup: C's `discount_clue` can call `new_combi(n + 1, n)` once a
+    light already sits next to the clue, which trips C's `r <= n`
+    assert; `combinations` just yields nothing there. Check when porting.
+  - Keen, Towers, Unequal: `LatinRules::is_valid` runs only on complete
+    grids, so a validator that rejects every grid below a guess makes the
+    search enumerate all of them, in C as in Rust.
+  - `qsort` call sites (10 games): libc's tie order differs between
+    platforms, so check each comparator for ties (§3.5).
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
 still check it.
 
 **Deferred by design (decided when first needed, under the D5 policy):**
-the sorted-vec crate for positional tree234 ops; the icon font; `criterion` vs `divan`; `fluent` vs
+the icon font; `criterion` vs `divan`; `fluent` vs
 `rust-i18n`; the Markdown viewer crate. Swapping one for an equivalent
 crate is a normal review item, not a new decision.
 

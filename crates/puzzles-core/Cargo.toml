@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 hex.workspace = true
 sha1_smol.workspace = true
+sorted-vec.workspace = true
 
 [lints]
 workspace = true

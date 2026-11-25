@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc c46e531c65c6b65156c0469c626379ae193f785847280591b1ffc4442a85bf4f # shrinks to items = [0, 0, 108, 0], key = 3
+cc aa0f69be9e8b0e88e1adf7f3fa244532fdd833a757801abbb45d6e5df4c751ec # shrinks to ops = [Add(0, 0), Add(9, 0), FindRel(9, 2)]
