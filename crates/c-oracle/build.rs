@@ -18,6 +18,7 @@ mod oracle {
         "dsf.c",
         "findloop.c",
         "malloc.c",
+        "matching.c",
         "misc.c",
         "random.c",
         "tdq.c",

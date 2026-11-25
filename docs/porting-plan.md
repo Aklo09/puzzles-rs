@@ -324,6 +324,7 @@ Implementations:
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` | `LoopFinder` (reusable buffers): `run(n, \|v\| neighbours_of(v))` with a closure returning an iterator instead of the `void *ctx` first/next callback; `has_loop()`, `is_loop_edge(u, v)` (C's "non-edge counts as loop edge" quirk kept), `is_bridge(u, v) -> Option<(usize, usize)>` instead of a bool + two out-parameters |
+| `matching` | `Matcher` (reusable buffers, replacing C's scratch space): `run(nl, nr, \|l\| neighbours_of(l), rng: Option<&mut RandomState>) -> usize` with a closure instead of `int **adjlists` + `adjsizes`; `left_to_right()`/`right_to_left()` return `&[Option<usize>]` instead of `-1`-filled out-arrays; `witness() -> (Vec<bool>, Vec<bool>)`. The randomised search permutes the matcher's own copy of the lists, not the caller's (no caller reuses them); same draws as C |
 | `config_item` union | `enum ConfigValue { String(String), Choices { names: Vec<&'static str>, selected: usize }, Bool(bool) }` |
 | `preset_menu` tree | `PresetMenu<P> { entries: Vec<PresetEntry<P>> }` with `enum PresetEntry { Preset{title, params, id}, Submenu{title, menu, id} }` |
 | `midend_serialise(write cb)` | `fn serialise(&self, w: &mut impl io::Write) -> io::Result<()>` |
@@ -884,9 +885,14 @@ at the top.
     of `misc.c` moves to Phase 2;
   - `findloop` (`LoopFinder`, ported after rejecting `petgraph`; parity with
     C for the loop flag and every pair's loop-edge and bridge answers,
-    including side sizes, on random and grid-shaped graphs).
+    including side sizes, on random and grid-shaped graphs);
+  - `matching` (`Matcher`, Hopcroft–Karp; parity with C for the count,
+    both partner arrays, the maximality witness and the generator state
+    after randomised runs, on random graphs of every density with empty
+    sides and repeated edges, reused matchers, `latin.c`-style row-by-row
+    generation and upstream's 256 + 256 subset graph).
 
-  Next: `matching`, `laydomino`, `divvy`, `latin`, and the crate-backed
+  Next: `laydomino`, `divvy`, `latin`, and the crate-backed
   `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;

@@ -11,6 +11,7 @@
 
 pub mod dsf;
 pub mod findloop;
+pub mod matching;
 pub mod misc;
 pub mod random;
 pub mod todo_queue;
