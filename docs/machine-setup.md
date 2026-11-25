@@ -34,3 +34,9 @@ cargo binstall cargo-insta cargo-nextest cargo-deny
 - `cargo-insta`: review and accept snapshot tests.
 - `cargo-nextest`: faster test runner.
 - `cargo-deny`: licence and security-advisory checks for dependencies.
+
+## Github cli
+```sh
+brew install gh
+gh auth login
+```

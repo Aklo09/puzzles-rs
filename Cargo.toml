@@ -12,7 +12,10 @@ publish = false
 [workspace.dependencies]
 # Internal and external crates are added here when a crate first uses them
 # (dependency policy, docs/porting-plan.md §5); Cargo warns on unused entries.
+puzzles-core = { path = "crates/puzzles-core" }
 cc = "1.11"
+proptest = "1.12"
+sha1_smol = "1.0"
 
 [workspace.lints.rust]
 # `deny` rather than `forbid` so that exactly one place can opt out: the FFI

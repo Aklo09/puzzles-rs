@@ -843,10 +843,23 @@ run alongside Phases 4–5. Front-end and game work only meet at the
 
 ---
 
-## 8. Status of the review
+## 8. Status
 
 **All planning decisions are made** (2026-11-25); see the decision log
-at the top. No open questions remain that block Phase 0.
+at the top.
+
+**Progress**
+- **Phase 0: done** (2026-11-25). Workspace, `c-oracle`, `cargo xtask ci`;
+  CI green on Ubuntu, Windows and macOS.
+- **Phase 1: in progress.** Done: `random` (`RandomState`, on
+  `sha1_smol`; parity with C for call sequences, encode/decode and counter
+  carries, property-tested). Next: `misc`, `dsf`, `tdq`, `findloop`,
+  `matching`, `laydomino`, `divvy`, `latin`, and the crate-backed `combi`,
+  `tree234` and `sort`.
+
+Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
+each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
+still check it.
 
 **Deferred by design (decided when first needed, under the D5 policy):**
 the sorted-vec crate for positional tree234 ops; `petgraph` vs a port
@@ -854,7 +867,3 @@ for `findloop`; the icon font; `criterion` vs `divan`; `fluent` vs
 `rust-i18n`; the Markdown viewer crate. Swapping one for an equivalent
 crate is a normal review item, not a new decision.
 
-**Next step:** Phase 0. Convert the root to a virtual workspace, add
-the `third_party/puzzles-c` submodule, set up workspace lints and the
-toolchain pin, create the `c-oracle` crate with `oracle_random_bits`,
-and set up the 3-OS CI matrix.

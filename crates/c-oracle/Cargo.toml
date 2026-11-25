@@ -16,5 +16,12 @@ oracle = ["dep:cc"]
 [build-dependencies]
 cc = { workspace = true, optional = true }
 
+# The differential tests (tests/*_parity.rs) compare the Rust port with the
+# C code, so they live here, next to the C bindings, and only build with
+# the `oracle` feature.
+[dev-dependencies]
+proptest.workspace = true
+puzzles-core.workspace = true
+
 [lints]
 workspace = true
