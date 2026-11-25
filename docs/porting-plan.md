@@ -112,7 +112,8 @@ puzzles-rs/
 │  │     ├─ lib.rs
 │  │     ├─ random.rs          # PRNG on top of sha1_smol (bit-exact with C)
 │  │     ├─ misc.rs            # obfuscate, shuffle (C-compatible), cursor helpers
-│  │     ├─ dsf.rs, tdq.rs, divvy.rs, findloop.rs,     # ported (D5 exception)
+│  │     ├─ dsf.rs, todo_queue.rs (tdq.c), divvy.rs,   # ported (D5 exception)
+│  │     ├─ findloop.rs,                               # ported (D5 exception)
 │  │     ├─ matching.rs, laydomino.rs, latin.rs        # ported (D5 exception)
 │  │     │                     # combi → itertools, tree234 → std/sorted-vec,
 │  │     │                     # sort.c → slice::sort_by with a capturing closure
@@ -313,6 +314,7 @@ Implementations:
 | `combi_ctx` | `itertools::Itertools::combinations` (same lexicographic order; oracle-checked) |
 | `bin2hex`/`hex2bin` | `hex` crate |
 | `DSF*` | three types `Dsf`, `MinDsf`, `FlipDsf` sharing the `DisjointSets` trait (`find`, `set_size`, `same_set`, `reset`); `union` per type (`FlipDsf::union` takes the flip); `dsf_copy`/`dsf_free` → `Clone`/`Drop` |
+| `tdq` | `TodoQueue` (`todo_queue` module): `VecDeque` + membership flags; `tdq_remove`'s `-1` → `pop() -> Option<usize>`, so loops become `while let Some(k) = todo.pop()` |
 | `tree234` | `BTreeSet`/`BTreeMap` where only add/del/find/count are used; a sorted-vec crate where positional ops (`index234`, `delpos234`) are used (9 files). No tree234 port. |
 | `grid` pointers | arena `Grid { faces: Vec<Face>, edges: Vec<Edge>, dots: Vec<Dot> }` with `FaceId(u32)` etc. |
 | `findloop` callback | `FnMut(vertex) -> impl Iterator<Item = usize>` or a neighbour trait |
@@ -857,10 +859,12 @@ at the top.
     sequences, encode/decode and counter carries, property-tested);
   - `dsf` (`Dsf`/`MinDsf`/`FlipDsf` + `DisjointSets`; parity with C for
     canonical elements, sizes, minima and flips after arbitrary operation
-    sequences, copies and long chains).
+    sequences, copies and long chains);
+  - `tdq` (`TodoQueue`; parity with C for pop order after arbitrary
+    push/pop/fill sequences and repeated ring-buffer wraparounds).
 
-  Next: `misc`, `tdq`, `findloop`, `matching`, `laydomino`, `divvy`,
-  `latin`, and the crate-backed `combi`, `tree234` and `sort`.
+  Next: `misc`, `findloop`, `matching`, `laydomino`, `divvy`, `latin`,
+  and the crate-backed `combi`, `tree234` and `sort`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

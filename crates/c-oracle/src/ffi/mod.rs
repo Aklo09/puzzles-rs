@@ -8,9 +8,11 @@
 
 mod dsf;
 mod random;
+mod tdq;
 
 pub use dsf::{CDsf, CDsfKind};
 pub use random::{CRandom, sha1};
+pub use tdq::CTdq;
 
 use std::ffi::c_void;
 
