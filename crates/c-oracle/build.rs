@@ -17,6 +17,7 @@ mod oracle {
     const C_SOURCES: &[&str] = &[
         "dsf.c",
         "findloop.c",
+        "laydomino.c",
         "malloc.c",
         "matching.c",
         "misc.c",
