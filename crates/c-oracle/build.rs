@@ -15,6 +15,7 @@ mod oracle {
     /// Upstream C files compiled into the oracle. Grows as more of the
     /// engine and the games are ported and need a reference.
     const C_SOURCES: &[&str] = &[
+        "combi.c",
         "divvy.c",
         "dsf.c",
         "findloop.c",
@@ -24,6 +25,7 @@ mod oracle {
         "matching.c",
         "misc.c",
         "random.c",
+        "sort.c",
         "tdq.c",
         "tree234.c",
     ];

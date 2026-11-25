@@ -18,4 +18,6 @@ pub mod matching;
 pub mod misc;
 pub mod random;
 pub mod solver_log;
+pub mod sort;
+pub mod sorted_set;
 pub mod todo_queue;

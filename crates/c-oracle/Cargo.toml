@@ -20,6 +20,7 @@ cc = { workspace = true, optional = true }
 # C code, so they live here, next to the C bindings, and only build with
 # the `oracle` feature.
 [dev-dependencies]
+itertools.workspace = true
 proptest.workspace = true
 puzzles-core.workspace = true
 
