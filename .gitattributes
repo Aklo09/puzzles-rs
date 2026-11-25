@@ -1,0 +1,15 @@
+# Store and check out text with LF on every OS, regardless of each
+# machine's core.autocrlf. Tests compare save files, snapshots and draw
+# traces byte-for-byte, so CRLF must never sneak in.
+* text=auto eol=lf
+
+# Puzzle save files and test fixtures: never convert, compare raw bytes.
+*.sav -text
+tests/corpus/** -text
+
+# Binary assets.
+*.png binary
+*.ttf binary
+*.otf binary
+*.ico binary
+*.icns binary

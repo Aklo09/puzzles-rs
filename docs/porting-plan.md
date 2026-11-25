@@ -339,6 +339,14 @@ Implementations:
   (`idx(x, y, w)`), so conversions happen in one place.
 * `f32` vs `f64` follow the C types exactly in generators
   (rect.c, undead.c) and in drawing.
+* **No fused multiply-add on either side.** Rust never contracts
+  `a * b + c` into an FMA implicitly. C compilers may: clang defaults to
+  `-ffp-contract=on`, which fuses on Apple Silicon/ARM, and GCC in GNU mode
+  defaults to `fast`. That would change the last bit of some float results,
+  so the C oracle would disagree with Rust on ARM machines only. Rule: the
+  oracle build always passes `-ffp-contract=off` for clang/gcc, and keeps
+  MSVC at `/fp:precise` without `/fp:contract`. In Rust, ported code
+  never uses `mul_add` (the C code never calls `fma()`).
 * Every `qsort` call site is checked for comparator ties. Where ties are
   possible, we reproduce the tie-break explicitly and add an oracle test.
 
@@ -706,6 +714,10 @@ toolkit change.
      gcc/clang on Linux, and the C sources are portable. It's gated behind
      a cargo feature (`oracle`), so contributors without a C toolchain can
      still run `cargo test`.
+   * Its `build.rs` disables floating-point contraction
+     (`-ffp-contract=off` for clang/gcc; MSVC stays at `/fp:precise`
+     without `/fp:contract`), so results match Rust on x86 and ARM alike
+     (see §3.5).
    * **C source: git submodule** `third_party/puzzles-c` (upstream
      `https://git.tartarus.org/simon/puzzles.git`, pinned to `616da16`, the
      same commit as `../P2`). CI on all 3 OSes checks it out with
