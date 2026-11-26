@@ -10,6 +10,7 @@ fn main() {
 #[cfg(feature = "oracle")]
 mod oracle {
     use std::env;
+    use std::fs;
     use std::path::PathBuf;
 
     /// Upstream C files compiled into the oracle. Grows as more of the
@@ -31,6 +32,12 @@ mod oracle {
         "tree234.c",
     ];
 
+    /// Games compiled into the oracle, by the name of their `struct game`
+    /// (and C file). They are built with `COMBINED`, as in C's
+    /// all-in-one builds, so each defines `const game <name>` rather than
+    /// `thegame`.
+    const C_GAMES: &[&str] = &["flip", "nullgame"];
+
     pub fn build() {
         println!("cargo::rerun-if-env-changed=PUZZLES_C_SRC");
         let c_dir = c_source_dir();
@@ -38,6 +45,7 @@ mod oracle {
         let shims = [
             PathBuf::from("csrc/shim.c"),
             PathBuf::from("csrc/recorder.c"),
+            PathBuf::from("csrc/game_harness.c"),
         ];
         for shim in &shims {
             println!("cargo::rerun-if-changed={}", shim.display());
@@ -47,9 +55,21 @@ mod oracle {
             c_dir.join("puzzles.h").display()
         );
 
+        // With COMBINED, puzzles.h declares every game from the list in
+        // generated-games.h, which C's CMake build writes; write ours.
+        let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("cargo sets OUT_DIR"));
+        let games_h: String = C_GAMES.iter().flat_map(|g| ["GAME(", g, ")\n"]).collect();
+        fs::write(out_dir.join("generated-games.h"), games_h).expect("write generated-games.h");
+
         let mut build = cc::Build::new();
-        build.include(&c_dir).files(&shims).warnings(false);
-        for source in C_SOURCES {
+        build
+            .include(&out_dir)
+            .include(&c_dir)
+            .define("COMBINED", None)
+            .files(&shims)
+            .warnings(false);
+        let games = C_GAMES.iter().map(|g| format!("{g}.c"));
+        for source in C_SOURCES.iter().map(|s| (*s).to_owned()).chain(games) {
             let path = c_dir.join(source);
             println!("cargo::rerun-if-changed={}", path.display());
             build.file(path);

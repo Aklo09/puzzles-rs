@@ -71,6 +71,7 @@ dependencies = [
  "itertools",
  "proptest",
  "puzzles-core",
+ "puzzles-games",
 ]
 
 [[package]]
@@ -296,6 +297,10 @@ version = "0.1.0"
 [[package]]
 name = "puzzles-games"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "puzzles-core",
+]
 
 [[package]]
 name = "puzzles-theme"

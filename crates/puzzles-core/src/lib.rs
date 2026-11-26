@@ -21,6 +21,7 @@ pub mod laydomino;
 pub mod matching;
 pub mod misc;
 pub mod palette;
+pub mod parse;
 pub mod preset;
 pub mod random;
 pub mod solver_log;

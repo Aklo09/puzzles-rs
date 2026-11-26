@@ -7,5 +7,18 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# One feature per game (D3), all puzzles on by default. `nullgame` is
+# C's template game: off by default and never in the registry.
+[features]
+default = ["flip"]
+flip = []
+nullgame = []
+
+[dependencies]
+puzzles-core.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
 [lints]
 workspace = true
