@@ -5,8 +5,10 @@
  * fill as -1, floats as the hex of their bits, text last and verbatim.
  *
  * Like C front ends without one, it provides no text_fallback (so
- * drawing.c's ASCII fallback runs) and no status_bar (the status text is
- * the mid-end's business, compared separately).
+ * drawing.c's ASCII fallback runs). The plain recorder has no
+ * status_bar; the game recorder (oracle_game_recorder_new) keeps the
+ * last status text apart from the trace, since Rust's Drawing hands it
+ * to the mid-end rather than to the drawing API.
  */
 
 #include <stdarg.h>
@@ -23,6 +25,7 @@ struct blitter {
 typedef struct recorder {
     char *text;
     size_t len, size;
+    char *status;                      /* last status bar text, or NULL */
 } recorder;
 
 static void rec_printf(drawing *dr, const char *fmt, ...)
@@ -121,6 +124,13 @@ static void rec_end_draw(drawing *dr)
     rec_printf(dr, "end\n");
 }
 
+static void rec_status_bar(drawing *dr, const char *text)
+{
+    recorder *rec = GET_HANDLE_AS_TYPE(dr, recorder);
+    sfree(rec->status);
+    rec->status = dupstr(text);
+}
+
 static blitter *rec_blitter_new(drawing *dr, int w, int h)
 {
     blitter *bl = snew(blitter);
@@ -167,15 +177,72 @@ static const drawing_api recorder_api = {
     rec_draw_thick_line,
 };
 
-/* A drawing that records into a fresh buffer. */
-drawing *oracle_recorder_new(void)
+/* The same, plus a status bar. */
+static const drawing_api game_recorder_api = {
+    1,
+    rec_draw_text,
+    rec_draw_rect,
+    rec_draw_line,
+    rec_draw_polygon,
+    rec_draw_circle,
+    rec_draw_update,
+    rec_clip,
+    rec_unclip,
+    rec_start_draw,
+    rec_end_draw,
+    rec_status_bar,
+    rec_blitter_new,
+    rec_blitter_free,
+    rec_blitter_save,
+    rec_blitter_load,
+    NULL, NULL, NULL, NULL, NULL, NULL, /* printing */
+    NULL, NULL, /* line_width, line_dotted */
+    NULL, /* text_fallback */
+    rec_draw_thick_line,
+};
+
+static recorder *new_recorder(void)
 {
     recorder *rec = snew(recorder);
     rec->size = 256;
     rec->len = 0;
     rec->text = snewn(rec->size, char);
     rec->text[0] = '\0';
-    return drawing_new(&recorder_api, NULL, rec);
+    rec->status = NULL;
+    return rec;
+}
+
+/* A drawing that records into a fresh buffer. */
+drawing *oracle_recorder_new(void)
+{
+    return drawing_new(&recorder_api, NULL, new_recorder());
+}
+
+/*
+ * A recording drawing for a game's redraws, which also keeps the status
+ * bar text. drawing.c's status_bar insists on a mid-end, which it only
+ * passes to midend_rewrite_statusbar (a stub in shim.c), so any
+ * non-NULL pointer does.
+ */
+drawing *oracle_game_recorder_new(void)
+{
+    static char fake_midend;
+    return drawing_new(&game_recorder_api, (midend *)&fake_midend,
+                       new_recorder());
+}
+
+/* Empties the trace (the status text stays). */
+void oracle_recorder_clear(drawing *dr)
+{
+    recorder *rec = GET_HANDLE_AS_TYPE(dr, recorder);
+    rec->len = 0;
+    rec->text[0] = '\0';
+}
+
+/* The last status bar text, or NULL (owned by the recorder). */
+const char *oracle_recorder_status(drawing *dr)
+{
+    return GET_HANDLE_AS_TYPE(dr, recorder)->status;
 }
 
 /* The text recorded so far (owned by the recorder). */
@@ -188,6 +255,7 @@ void oracle_recorder_free(drawing *dr)
 {
     recorder *rec = GET_HANDLE_AS_TYPE(dr, recorder);
     sfree(rec->text);
+    sfree(rec->status);
     sfree(rec);
     drawing_free(dr);
 }

@@ -28,6 +28,8 @@ summarises them all.
 | — | Mid-end drawing | **Decided** 2026-11-25 | Deferred redraws: the mid-end is a state machine that never draws by itself; events mark it dirty and the front end calls `redraw(&mut dyn DrawingApi)` (once per frame). The draw state is built in `new_game`/`size` as in C, without a drawing: blitters are plain handles a game creates freely, and the canvas allocates their pixels on first use. C's `interactive` flag (`drawing != NULL`) is set when the mid-end is created. Game logic is unaffected (checked: `interpret_move` reads only layout fields set in `new_drawstate`/`set_size`); mid-end-level draw sequences may differ from C (UI), game-level draw traces still match (D1 level 2). Rejected: drawing passed per call; mid-end owning the canvas |
 | — | Mid-end ↔ front end | **Decided** 2026-11-25 | No callbacks: the seed is passed to `Midend::new`, and the front end reads `wants_timer()`, `is_dirty()` and a take-once game-ID-changed flag after each call (replacing `activate_timer`/`deactivate_timer`, `get_random_seed`, `midend_request_id_changes`). Rejected: a `FrontEnd` callback trait (callbacks can't use the borrowed mid-end, so they'd only set flags) |
 | — | Phase 2 order | **Decided** 2026-11-25 | One PR each: core types (Button, config, presets, `palette!`, `DrawingApi` + blitter handles + `Drawing` helpers, rest of `misc.c`); `Game` trait + nullgame + Flip (game-level parity); mid-end + `dyn Puzzle` + save files and prefs; theme crate + Classic; CLI; Fifteen; Guess. Rejected: mid-end first, shaped by nullgame only |
+| — | `Game` trait details | **Decided** 2026-11-26 | (a) `new_game` and `execute_move` take `&mut GameCtx`, which collects mid-end requests (Mines' `supersede_desc(desc, privdesc)`) for the mid-end to apply after the call; other games ignore it. Rejected: a take-once poll hook on the state (needs a `RefCell` in Mines' layout); a wrapper return type. (b) Capabilities are `bool` consts defaulting to false (`CAN_CONFIGURE`, `CAN_SOLVE`, `CAN_FORMAT_AS_TEXT_EVER`, `WANTS_STATUSBAR`, `IS_TIMED`; `CAN_PRINT`/`CAN_PRINT_IN_COLOUR` join with printing in Phase 9); C's `flags` int is `const FLAGS: GameFlags` (bitflags); a generic conformance test checks each const against its method. Rejected: one bitflags for everything. (c) nullgame lives in `puzzles-games` behind a `nullgame` feature, not in `default` or the registry. Rejected: a `puzzles_core::testing` module. (d) `decode_move` returns `Result<Move, MoveParseError>`, a unit error: a rejected move is an error for developers (tests, logs, tools), while users still see the mid-end's generic C message. Rejected: `Option` (same information, but not typed as an error); an error with a reason per game (messages C never had, which users wouldn't see) |
+| — | Threading | **Decided** 2026-11-26 | The desktop app runs puzzle generation on one worker thread ("Generating…" overlay, cancel discards the result; the ported generators are unchanged); moves, undo, solving, redraw and animation stay on the UI thread. Game states stay single-threaded with `Rc` for shared parts; only `Params: Send + 'static` is required, since `new_desc` takes params + seed and returns a string. The web build can generate in place. Rejected: `Arc` + `Send + Sync` states for off-thread solving (solving is fast, mostly from `aux`; revisit per game if one proves slow) |
 
 ---
 
@@ -174,8 +176,9 @@ only at the front-end boundary, where heterogeneous games are needed
 (per rust-best-practices ch. 6: "box at the boundary").
 
 ```rust
+// puzzles-core/src/game.rs (abridged; methods with a body are optional)
 pub trait Game: 'static {
-    type Params: Clone + PartialEq + fmt::Debug;
+    type Params: Clone + PartialEq + fmt::Debug + Send + 'static;  // generated on a worker thread
     type State: Clone;            // shared immutable parts inside as Rc<…>
     type Ui;
     type DrawState;
@@ -183,62 +186,75 @@ pub trait Game: 'static {
 
     const NAME: &'static str;
     const PREFERRED_TILESIZE: i32;
-    const FLAGS: GameFlags;       // bitflags: SOLVE_ANIMATES, REQUIRE_RBUTTON, ...
+    const PALETTE: &'static [ColourSpec];  // §4.2 / D7: named colours only, no RGB
+    const FLAGS: GameFlags = GameFlags::empty();  // SOLVE_ANIMATES, REQUIRE_RBUTTON, BUTTON_BEATS, ...
+    const CAN_CONFIGURE: bool = false;     // also CAN_SOLVE, CAN_FORMAT_AS_TEXT_EVER,
+    // ...                                 //   WANTS_STATUSBAR, IS_TIMED
 
     // params
     fn default_params() -> Self::Params;
-    fn presets() -> PresetMenu<Self::Params> { PresetMenu::empty() }
+    fn presets() -> PresetMenu<Self::Params> { PresetMenu::new() }
     fn decode_params(params: &mut Self::Params, s: &str);
     fn encode_params(params: &Self::Params, full: bool) -> String;
-    fn configure(_p: &Self::Params) -> Option<Vec<ConfigItem>> { None }
-    fn custom_params(_cfg: &[ConfigItem]) -> Result<Self::Params, GameError> { unsupported() }
+    fn configure(p: &Self::Params) -> Option<Vec<ConfigItem>> { None }
+    fn custom_params(cfg: &[ConfigItem]) -> Result<Self::Params, GameError> { Err(GameError::unsupported()) }
     fn validate_params(p: &Self::Params, full: bool) -> Result<(), GameError>;
 
     // generation & state
-    fn new_desc(p: &Self::Params, rng: &mut RandomState, interactive: bool)
-        -> NewDesc;               // { desc: String, aux: Option<String> }
+    fn new_desc(p: &Self::Params, rng: &mut RandomState, interactive: bool) -> NewDesc;  // desc + aux
     fn validate_desc(p: &Self::Params, desc: &str) -> Result<(), GameError>;
     fn new_game(ctx: &mut GameCtx, p: &Self::Params, desc: &str) -> Self::State;
+    fn set_public_desc(s: &mut Self::State, public_desc: &str) {}            // Mines
+    fn solve(orig: &Self::State, cur: &Self::State, aux: Option<&str>)
+        -> Result<Self::Move, GameError> { Err(GameError::unsupported()) }
+    fn can_format_as_text_now(p: &Self::Params) -> bool { Self::CAN_FORMAT_AS_TEXT_EVER }
+    fn text_format(s: &Self::State) -> Option<String> { None }
+    fn status(s: &Self::State) -> GameStatus;   // Ongoing | Won | Lost
+    fn timing_state(s: &Self::State, ui: &mut Self::Ui) -> bool { true }
 
-    // optional capabilities: default = unsupported
-    fn solve(_orig: &Self::State, _cur: &Self::State, _aux: Option<&str>)
-        -> Result<Self::Move, GameError> { unsupported() }
-    fn text_format(_s: &Self::State) -> Option<String> { None }
-    // prefs, encode/decode_ui, request_keys, print, timing ... (same pattern)
-
-    // interaction
+    // UI and moves
     fn new_ui(s: &Self::State) -> Self::Ui;
+    fn prefs(ui: &Self::Ui) -> Vec<ConfigItem> { .. }   // also set_prefs, encode_ui, decode_ui,
+    // ...                                             //   request_keys, changed_state, current_key_label
     fn interpret_move(s: &Self::State, ui: &mut Self::Ui, ds: &Self::DrawState,
                       x: i32, y: i32, button: Button) -> MoveResult<Self::Move>;
-    fn execute_move(s: &Self::State, mv: &Self::Move) -> Option<Self::State>;
-    fn status(s: &Self::State) -> GameStatus;   // Ongoing | Won | Lost
+    fn execute_move(ctx: &mut GameCtx, s: &Self::State, mv: &Self::Move) -> Option<Self::State>;
+    fn encode_move(mv: &Self::Move, out: &mut String);                     // D4
+    fn decode_move(s: &Self::State, text: &str) -> Result<Self::Move, MoveParseError>;  // D4, untrusted
 
-    // move text codec (save files, undo chain persistence): D4
-    fn encode_move(mv: &Self::Move, out: &mut String);
-    fn decode_move(s: &Self::State, text: &str) -> Result<Self::Move, MoveParseError>;
-
-    // drawing
+    // drawing (draw state built without a drawing: mid-end drawing decision)
     fn compute_size(p: &Self::Params, tilesize: i32, ui: &Self::Ui) -> (i32, i32);
-    const PALETTE: &'static [ColourSpec];  // §4.2 / D7: named colours only, no RGB; themes supply values
-    fn new_drawstate(dr: &mut Drawing, s: &Self::State) -> Self::DrawState;
-    fn set_size(dr: &mut Drawing, ds: &mut Self::DrawState, p: &Self::Params, tilesize: i32);
-    fn redraw(dr: &mut Drawing, ds: &mut Self::DrawState, old: Option<&Self::State>,
-              new: &Self::State, dir: i32, ui: &Self::Ui, anim_t: f32, flash_t: f32);
-    fn anim_length(...) -> f32 { 0.0 }
-    fn flash_length(...) -> f32 { 0.0 }
-    // ...
+    fn new_drawstate(s: &Self::State) -> Self::DrawState;
+    fn set_size(ds: &mut Self::DrawState, p: &Self::Params, tilesize: i32);
+    fn redraw(dr: &mut Drawing<'_>, ds: &mut Self::DrawState, old: Option<&Self::State>,
+              new: &Self::State, dir: i32, ui: &Self::Ui, anim_time: f32, flash_time: f32);
+    fn anim_length(old: &Self::State, new: &Self::State, dir: i32, ui: &mut Self::Ui) -> f32 { 0.0 }
+    fn flash_length(old: &Self::State, new: &Self::State, dir: i32, ui: &mut Self::Ui) -> f32 { 0.0 }
+    fn cursor_location(ui: &Self::Ui, ds: &Self::DrawState, s: &Self::State,
+                       p: &Self::Params) -> Option<Rect> { None }
 }
 
 pub enum MoveResult<M> { Unused, NoEffect, UiUpdate, Move(M) }
 ```
 
 Notes:
-* `can_solve`, `can_configure`, and so on become associated consts or are
-  derived from whether the default method is overridden (an associated
-  `const CAN_SOLVE: bool` is the simplest).
+* `can_solve`, `can_configure`, and so on become `bool` consts defaulting
+  to false (`const CAN_SOLVE: bool`); C's `flags` int is `const FLAGS:
+  GameFlags`. The conformance test (`puzzles-games/tests/conformance.rs`)
+  checks each const against its method for every game.
 * `GameCtx` gives `new_game`/`execute_move` the narrow mid-end callback
-  that Mines needs (`supersede_game_desc`) without a back-pointer.
-* `free_*` / `dup_*` disappear (`Drop` / `Clone`).
+  that Mines needs (`supersede_game_desc`) without a back-pointer: it
+  collects the request, and the mid-end applies it after the call.
+* `free_*` / `dup_*` disappear (`Drop` / `Clone`). `fetch_preset` and
+  `preset_menu` become `presets()`.
+* `decode_move` returns the unit `MoveParseError` where C's
+  `execute_move` returns NULL for text it can't parse; like C, it gives
+  no reason (decision log).
+* Sentinels become `Option`: `current_key_label`'s `""` is `None`;
+  `get_cursor_location` leaving its outputs unset is `None`.
+* `redraw` keeps C's argument list, so ports stay easy to compare.
+* Printing (`can_print`, `print_size`, `print`) joins the trait with
+  printing in Phase 9, as default methods, so no game changes then.
 
 ### [DECISION 4] Move representation: typed moves (**decided**)
 Each game defines `type Move`. `interpret_move` produces it, `execute_move`
@@ -349,6 +365,7 @@ Implementations:
 | `midend_deserialise(read cb)` | `fn deserialise(r: &mut impl io::Read) -> Result<…, DeserialiseError>` |
 | button ints + `MOD_*` | `struct Button { kind: ButtonKind, mods: Modifiers }` (bitflags) with `From<i32>`/`Into<i32>` for the save-file/UI-string paths |
 | `#ifdef STANDALONE_SOLVER` | solvers live in the game module as `pub` fns; `puzzles-cli` calls them; verbosity is a `SolverLog` parameter, not a global |
+| `atoi`, `sscanf("%d")`, `isdigit` loops on game IDs and moves | `parse::atoi`, `parse::scan_int`, `parse::skip_digits` on bytes: C's leniency (spaces, signs, trailing text); out-of-range numbers truncate a 64-bit `long`, as C on Linux and macOS (Windows C saturates at `i32`; both agree on every number that fits) |
 | `debug(())` | `log::debug!` (gated, zero-cost when disabled) |
 
 ### 3.4 Errors (rust-best-practices ch. 4)
@@ -944,6 +961,9 @@ at the top.
     search enumerate all of them, in C as in Rust.
   - `qsort` call sites (10 games): libc's tie order differs between
     platforms, so check each comparator for ties (§3.5).
+  - Flip: random shapes on 1 × 2 and 2 × 1 grids can never pass C's
+    "no two shapes alike" check, so generation never ends there, in C as
+    in Rust. The desktop app's cancellable generation thread covers it.
 
 - **Phase 2: in progress.** Done:
   - core types (`button`, `config`, `preset`, `game` result types,
@@ -952,9 +972,25 @@ at the top.
     `misc::move_cursor`; parity with C for button codes and macros,
     `button2label`, `move_cursor`, and random sequences of drawing calls
     and helpers through `drawing.c` and a C recording drawing API, whose
-    trace text matches `RecordingDrawing` byte for byte).
+    trace text matches `RecordingDrawing` byte for byte);
+  - the `Game` trait (`game`), C's number parsing (`parse`), nullgame and
+    Flip (`puzzles-games`). The oracle compiles C games with `COMBINED`
+    and drives them through a generic harness (`csrc/game_harness.c`,
+    `CGame`/`CSession`), and `tests/common` runs a Rust game beside it
+    (`Pair<G>`), reusable for every game. Flip matches C for presets,
+    parameter decoding/encoding/validation of arbitrary strings, every
+    preset's descriptions over 25 seeds and random sizes up to 8 × 8,
+    description validation of mutated descriptions, and random play
+    scripts (clicks, keys, solver, raw and malformed move strings)
+    compared step by step: move strings, states, animation and flash
+    lengths, every animation and flash frame's draw trace, and the
+    status bar. A conformance test checks every game's `CAN_*` consts,
+    parameter round trips, presets and palette. Flip's palette parity
+    waits for the theme crate; its golden corpus (`insta`), `.sav`
+    round trip and desktop play complete its done bar later in Phase 2
+    and Phase 3.
 
-  Next: the `Game` trait with nullgame and Flip.
+  Next: the mid-end, `dyn Puzzle`, save files and prefs.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

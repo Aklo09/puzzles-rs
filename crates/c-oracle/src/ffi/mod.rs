@@ -11,6 +11,7 @@ mod divvy;
 mod drawing;
 mod dsf;
 mod findloop;
+mod game;
 mod latin;
 mod laydomino;
 mod matching;
@@ -23,6 +24,7 @@ pub use divvy::c_divvy_rectangle_attempt;
 pub use drawing::{CRecorder, c_button_class, c_button2label, c_move_cursor};
 pub use dsf::{CDsf, CDsfKind};
 pub use findloop::CFindLoop;
+pub use game::{CGame, CMoveResult, CSession};
 pub use latin::{
     C_DIFF_AMBIGUOUS, C_DIFF_IMPOSSIBLE, C_DIFF_UNFINISHED, C_MAX_LEVELS, CLatinRules,
     CLatinSolver, CLatinView, CLevels, c_latin_check, c_latin_generate, c_latin_generate_rect,
