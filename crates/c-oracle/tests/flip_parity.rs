@@ -58,15 +58,22 @@ fn presets_match() {
     assert_eq!(rust.len(), 6);
 }
 
-/// Parameter strings with digit runs short enough to fit in an `int`
-/// (longer ones overflow, which C leaves to the platform).
+/// Parameter strings whose digit runs are at most 9 digits, so every
+/// number fits in an `int` (longer ones overflow, which C leaves to the
+/// platform: Windows saturates, Linux and macOS truncate). A non-digit
+/// always ends a run, so runs can't join into longer ones.
 fn param_string() -> impl Strategy<Value = String> {
-    "([0-9]{0,9}[xrc +-]?){0,4}[a-z0-9,:#]{0,3}"
+    "([0-9]{0,9}[xrc +-]){0,4}[0-9]{0,9}([a-z,:#][a-z0-9,:#]{0,2})?"
 }
 
 proptest! {
     #[test]
     fn params_decode_encode_validate_match(s in param_string(), full: bool) {
+        prop_assert!(
+            s.split(|c: char| !c.is_ascii_digit()).all(|run| run.len() <= 9),
+            "strategy produced a long digit run: {}",
+            s
+        );
         let c = CGame::flip();
         let mut p = Flip::default_params();
         Flip::decode_params(&mut p, &s);
