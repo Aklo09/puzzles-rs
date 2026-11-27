@@ -34,6 +34,8 @@ fn pkr(r: KeyResult) -> i32 {
         KeyResult::SomeEffect => 1,
         KeyResult::NoEffect => 2,
         KeyResult::Unused => 3,
+        // Only with `defer_new_game`, which C doesn't have.
+        KeyResult::NewGame => unreachable!("not deferred here"),
     }
 }
 

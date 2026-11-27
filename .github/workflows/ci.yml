@@ -53,6 +53,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # A software Vulkan driver (Mesa's lavapipe), so the desktop app's
+      # wgpu UI tests render on runners without a GPU.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       # Same checks as locally: fmt, clippy (-D warnings), all tests
       # including the C oracle (MSVC on Windows, gcc on Linux, clang on macOS).
       - run: cargo xtask ci

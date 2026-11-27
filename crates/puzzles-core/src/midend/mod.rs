@@ -25,10 +25,12 @@
 //! Everything a user can exchange with C (game IDs, generated puzzles,
 //! save files, preference files) behaves as in C.
 
+mod generate;
 mod options;
 mod prefs;
 mod savefile;
 
+pub use generate::{GeneratedGame, NewGameJob};
 pub use options::{MidendOptions, parse_env_presets};
 pub use savefile::{DeserialiseError, identify_game};
 
@@ -90,6 +92,11 @@ const fn is_ui_fake_key(b: i32) -> bool {
 pub enum KeyResult {
     /// The user asked to quit (`PKR_QUIT`).
     Quit,
+    /// The user asked for a new game, and
+    /// [`MidendOptions::defer_new_game`] leaves starting it to the front
+    /// end, through [`Midend::begin_new_game`]. Not in C, which starts
+    /// it at once (`PKR_SOME_EFFECT`).
+    NewGame,
     /// Something changed (`PKR_SOME_EFFECT`).
     SomeEffect,
     /// Understood, but nothing changed (`PKR_NO_EFFECT`).
@@ -192,6 +199,11 @@ struct Presets<P> {
 /// The mid-end for one game type (C's `midend`).
 #[allow(clippy::struct_excessive_bools, reason = "C's midend flags")]
 pub struct Midend<G: Game> {
+    /// This mid-end's unique id, and a counter bumped by anything that
+    /// changes what New Game would do, so a [`NewGameJob`] begun before
+    /// can't finish (the split New Game).
+    owner: u64,
+    job_epoch: u64,
     rng: RandomState,
     interactive: bool,
     options: MidendOptions,
@@ -262,6 +274,8 @@ impl<G: Game> Midend<G> {
             G::decode_params(&mut params, default);
         }
         let mut me = Self {
+            owner: generate::next_owner_id(),
+            job_epoch: 0,
             rng: RandomState::new(seed),
             interactive,
             options,
@@ -459,6 +473,7 @@ impl<G: Game> Midend<G> {
     /// Sets the parameters for the next New Game (C's
     /// `midend_set_params`).
     pub fn set_params(&mut self, params: &G::Params) {
+        self.job_epoch += 1;
         self.params = params.clone();
     }
 
@@ -525,6 +540,7 @@ impl<G: Game> Midend<G> {
     /// Installs a game, as C's `midend_deserialise` does once a save file
     /// has been checked.
     fn install(&mut self, s: Snapshot<G>) {
+        self.job_epoch += 1;
         self.desc = s.desc;
         self.privdesc = s.privdesc;
         self.seed = s.seed;
@@ -555,11 +571,77 @@ impl<G: Game> Midend<G> {
 
     /// Starts a new game (C's `midend_new_game`): from the game ID set
     /// last, or else a fresh random seed with the current parameters.
+    /// The same as [`begin_new_game`](Self::begin_new_game), running the
+    /// job, then [`finish_new_game`](Self::finish_new_game).
     ///
     /// # Panics
     /// If the game's aux data doesn't solve its own puzzle (C's
     /// self-test).
     pub fn new_game(&mut self) {
+        let generated = self.begin_new_game().run();
+        let finished = self.finish_new_game(generated);
+        debug_assert!(finished, "a job finishes in the mid-end that began it");
+    }
+
+    /// The first half of [`new_game`](Self::new_game): draws a fresh
+    /// random seed if the game ID doesn't fix the game, as C does, and
+    /// returns the generation as a job that can run on another thread.
+    /// Nothing else changes until [`finish_new_game`](Self::finish_new_game),
+    /// so a job that is dropped leaves the current game as it was.
+    pub fn begin_new_game(&mut self) -> NewGameJob {
+        self.job_epoch += 1;
+        let (fresh_seed, generate) = match self.genmode {
+            GenMode::Desc => (None, None),
+            GenMode::Seed => {
+                let seed = self.seed.clone().unwrap_or_default();
+                let params = self
+                    .curparams
+                    .clone()
+                    .unwrap_or_else(|| self.params.clone());
+                (None, Some(self.generator(params, seed)))
+            }
+            GenMode::Nothing => {
+                // 15 digits, about 48 bits, without a leading zero.
+                let mut seed = Vec::with_capacity(15);
+                seed.push(b'1' + self.rng.upto(9) as u8);
+                for _ in 1..15 {
+                    seed.push(b'0' + self.rng.upto(10) as u8);
+                }
+                let generate = self.generator(self.params.clone(), seed.clone());
+                (Some(seed), Some(generate))
+            }
+        };
+        NewGameJob {
+            owner: self.owner,
+            epoch: self.job_epoch,
+            fresh_seed,
+            generate,
+        }
+    }
+
+    fn generator(
+        &self,
+        params: G::Params,
+        seed: Vec<u8>,
+    ) -> Box<dyn FnOnce() -> crate::game::NewDesc + Send> {
+        let interactive = self.interactive;
+        Box::new(move || G::new_desc(&params, &mut RandomState::new(&seed), interactive))
+    }
+
+    /// The second half of [`new_game`](Self::new_game): installs a
+    /// generated game. Returns false, changing nothing, if the job came
+    /// from another mid-end, or anything that changes what New Game would
+    /// do happened since it began (another New Game, new parameters or
+    /// game ID, loading a game, undoing a New Game).
+    ///
+    /// # Panics
+    /// If the game's aux data doesn't solve its own puzzle (C's
+    /// self-test).
+    pub fn finish_new_game(&mut self, generated: GeneratedGame) -> bool {
+        if generated.owner != self.owner || generated.epoch != self.job_epoch {
+            return false;
+        }
+        self.job_epoch += 1;
         self.newgame_undo = None;
         let keep_for_undo = self.newgame_can_store_undo;
         if keep_for_undo {
@@ -571,24 +653,13 @@ impl<G: Game> Midend<G> {
         self.states.clear();
         self.drawstate = None;
 
-        if self.genmode == GenMode::Desc {
-            self.genmode = GenMode::Nothing;
-        } else {
-            if self.genmode == GenMode::Seed {
-                self.genmode = GenMode::Nothing;
-            } else {
-                // 15 digits, about 48 bits, without a leading zero.
-                let mut seed = Vec::with_capacity(15);
-                seed.push(b'1' + self.rng.upto(9) as u8);
-                for _ in 1..15 {
-                    seed.push(b'0' + self.rng.upto(10) as u8);
-                }
+        self.genmode = GenMode::Nothing;
+        if let Some(new) = generated.desc {
+            if let Some(seed) = generated.fresh_seed {
                 self.seed = Some(seed);
                 self.curparams = Some(self.params.clone());
             }
-            let seed = self.seed.clone().unwrap_or_default();
-            let curparams = self.curparams.get_or_insert_with(|| self.params.clone());
-            let new = G::new_desc(curparams, &mut RandomState::new(&seed), self.interactive);
+            self.curparams.get_or_insert_with(|| self.params.clone());
             self.desc = Some(new.desc);
             self.privdesc = None;
             self.aux = new.aux;
@@ -636,6 +707,7 @@ impl<G: Game> Midend<G> {
         self.id_changed = true;
         self.dirty = true;
         self.newgame_can_store_undo = true;
+        true
     }
 
     /// Whether there is anything to undo (C's `midend_can_undo`).
@@ -895,6 +967,9 @@ impl<G: Game> Midend<G> {
                 let one_key =
                     |c: u8| self.one_key_shortcuts && (key(c) || key(c.to_ascii_uppercase()));
                 if one_key(b'n') || key(0x0e) || button == UI_NEWGAME {
+                    if self.options.defer_new_game {
+                        return KeyResult::NewGame;
+                    }
                     self.new_game();
                     self.dirty = true;
                     return KeyResult::SomeEffect;
@@ -1254,6 +1329,7 @@ impl<G: Game> Midend<G> {
             G::validate_desc(&newparams, desc)?;
         }
 
+        self.job_epoch += 1;
         self.params = newparams;
         self.curparams = newcurparams;
         self.desc = None;
@@ -1339,6 +1415,7 @@ impl<G: Game> Midend<G> {
             ConfigKind::Settings => {
                 let params = G::custom_params(items)?;
                 G::validate_params(&params, true)?;
+                self.job_epoch += 1;
                 self.params = params;
             }
             ConfigKind::Seed | ConfigKind::Desc => {

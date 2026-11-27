@@ -11,7 +11,9 @@ use crate::button::Button;
 use crate::config::ConfigItem;
 use crate::drawing::DrawingApi;
 use crate::game::{Game, GameError, GameFlags, GameStatus, KeyLabel, Rect};
-use crate::midend::{Config, ConfigKind, DeserialiseError, KeyResult, Midend};
+use crate::midend::{
+    Config, ConfigKind, DeserialiseError, GeneratedGame, KeyResult, Midend, NewGameJob,
+};
 use crate::palette::PaletteEntry;
 use crate::preset::PresetMenu;
 
@@ -58,6 +60,10 @@ pub trait Puzzle {
 
     /// [`Midend::new_game`].
     fn new_game(&mut self);
+    /// [`Midend::begin_new_game`].
+    fn begin_new_game(&mut self) -> NewGameJob;
+    /// [`Midend::finish_new_game`].
+    fn finish_new_game(&mut self, generated: GeneratedGame) -> bool;
     /// [`Midend::restart_game`].
     fn restart_game(&mut self);
     /// [`Midend::process_key`]; undo, redo, new game, solve and quit are
@@ -193,6 +199,14 @@ impl<G: Game> Puzzle for Midend<G> {
 
     fn new_game(&mut self) {
         Midend::new_game(self);
+    }
+
+    fn begin_new_game(&mut self) -> NewGameJob {
+        Midend::begin_new_game(self)
+    }
+
+    fn finish_new_game(&mut self, generated: GeneratedGame) -> bool {
+        Midend::finish_new_game(self, generated)
     }
 
     fn restart_game(&mut self) {

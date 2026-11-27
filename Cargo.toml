@@ -23,9 +23,13 @@ bitflags = "2.13"
 cc = "1.11"
 clap = { version = "4.6", features = ["derive"] }
 csscolorparser = "0.9"
+eframe = "0.36"
+egui-phosphor = "0.14"
+egui_kittest = { version = "0.36", features = ["eframe", "wgpu"] }
 hex = "0.4"
 insta = "1.49"
 itertools = "0.15"
+pollster = "0.4"
 proptest = "1.12"
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
