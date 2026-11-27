@@ -33,6 +33,9 @@ summarises them all.
 | — | Classic theme details | **Decided** 2026-11-27 | (a) Classic reproduces C with the default background 0.9 grey (GTK 3, headless and web front ends; the oracle uses it too); Highlight/Lowlight are C's `game_mkhighlight` of it. Rejected: 0.8 (macOS), the system colour (Windows). (b) A theme's per-game overrides of palette entries (`[game.<name>.overrides]`, keyed by entry name) apply in that theme only and are not inherited by themes that extend it, so Classic's light-theme quirks don't leak into Dark; `Specific` keys (`[game.<name>]`) are inherited. Rejected: inheriting overrides. Consequence of "within float epsilon": colours are `f32` triples as in C, theme files accept a float triple besides CSS syntax, and Classic is written as float triples |
 | — | CLI commands | **Decided** 2026-11-27 | (a) `generate <game> [ID] [-n N]` prints N descriptive game IDs, one per line, from a non-interactive mid-end: random seeds without an ID or with bare parameters; exactly one game for a seed or descriptive ID. Rejected: GTK's batch mode (seed numbering `abc`, `abc-1`, …, `--test-solve`, `--time-generation`, `--save`). (b) `solve <game> [ID…]` (IDs from the arguments, or stdin lines) prints the solved position as `text_format` when the game has one, otherwise the solve move string; `--move` always prints the move. The C standalone solvers' output (`-g`, `-v`) joins in Phase 6. Rejected: always the move string. (c) `roundtrip [FILE]` is C's `fuzzpuzz`: identify the game, load, size to `INT_MAX`, redraw with a null drawing, write the save file to stdout; errors to stderr, exit 1 |
 | — | Threading | **Decided** 2026-11-26 | The desktop app runs puzzle generation on one worker thread ("Generating…" overlay, cancel discards the result; the ported generators are unchanged); moves, undo, solving, redraw and animation stay on the UI thread. Game states stay single-threaded with `Rc` for shared parts; only `Params: Send + 'static` is required, since `new_desc` takes params + seed and returns a string. The web build can generate in place. Rejected: `Arc` + `Send + Sync` states for off-thread solving (solving is fast, mostly from `aux`; revisit per game if one proves slow) |
+| — | User presets | **Decided** 2026-11-27 | (a) User-defined presets live in their own hand-edited `presets.toml` in the per-OS config directory (next to user themes), which the app only reads, with hot reload. Rejected: a section of `settings.toml` (the app rewrites that file, losing comments and layout). (b) Entries are arrays of tables keyed by game (`[[flip]] title = "Big"`, `params = "6x6c"`); `params` is a C parameter string, parsed by the game's `decode_params` + `validate_params`; an entry with `presets = [...]` instead of `params` is a submenu; invalid entries are skipped with a warning, never a panic. Rejected: named per-game fields (`w = 6`, `type = "crosses"`), which need key names C doesn't have and break when a game's options change. (c) Menu order: built-in presets, then the file, then `<GAME>_PRESETS` (C appends extras after the built-ins); the env var keeps working for the CLI and C-style setups. (d) `MidendOptions::extra_presets` becomes a structured list (title, params string or submenu) instead of a C-syntax string; `from_lookup` parses `<GAME>_PRESETS` into it with C's parsing, so titles may contain `:` and TOML submenus need no `#` encoding. (e) Phase 3 reads the file only; "save current parameters as a preset" (editing the file with `toml_edit`, keeping comments) comes later with the Settings work |
+| — | Canvas crate | **Decided** 2026-11-27 | The tiny-skia `DrawingApi` canvas (shapes, clipping, blitters, text, PNG output) is its own crate, `puzzles-canvas`, depending only on `puzzles-core` and `puzzles-theme`, with no egui. `puzzles-games` tests use it for canvas snapshots, `puzzles-cli` gains a `render` command (a game ID or save file to PNG, in a chosen theme and size; flags settled in the canvas PR), and later thumbnails and a web build reuse it. Rejected: `puzzles-desktop/src/canvas/` with the app as lib + bin (snapshot tests stuck in the desktop crate, and rendering from the CLI would pull in eframe) |
+| — | Phase 3 order | **Decided** 2026-11-27 | One PR each, a playable game first: (1) `engine/extra-presets`: structured `MidendOptions::extra_presets`; (2) `ui/canvas`: `puzzles-canvas` (tiny-skia shapes, clip, blitters, `ab_glyph` text with bundled Inter + JetBrains Mono), Classic snapshots of Flip, Fifteen and Guess, `puzzles-cli render`; (3) `ui/shell`: eframe window with a playable game (game list, fluid resize + HiDPI, per-OS input table, timer and animation, status bar, toolbar + shortcuts, cancellable generation thread); (4) `ui/dialogs`: presets menu with `presets.toml`, custom-params/game-ID/seed dialogs from `ConfigItem`s, copy/paste IDs, settings with per-game prefs; (5) `ui/themes`: Light, Dark, Follow-system, egui `Visuals` from the theme, user themes + hot reload, theme lint, snapshots in every theme; (6) `ui/persistence`: `settings.toml`, `.sav` save/load, drag-and-drop, session restore, window state; (7) `ui/fullscreen`: full-screen, immersive mode, zoom and pan. Then manual play on two OSes. Rejected: themes before dialogs (a theme can't be judged without a playable game); one Phase 3 PR |
 
 ---
 
@@ -142,13 +145,14 @@ puzzles-rs/
 │  │                           #   built-in themes (themes/*.toml, incl. generated classic.toml)
 │  ├─ puzzles-games/           # lib: one module per puzzle + registry `GAMES`
 │  │  └─ src/{blackbox.rs, bridges.rs, ..., untangle.rs, lib.rs}
+│  ├─ puzzles-canvas/          # lib: tiny-skia `DrawingApi` impl, text, blitters, DPR, PNG
+│  │                           #   (no egui; used by desktop, CLI `render`, snapshot tests)
 │  ├─ puzzles-desktop/         # bin `puzzles`: GUI front end (all games in one exe)
 │  │  └─ src/
 │  │     ├─ app/               # UI-toolkit-agnostic app state: session, settings,
 │  │     │                     #   theme resolution, layout/zoom maths, persistence
-│  │     ├─ canvas/            # tiny-skia `DrawingApi` impl, text, blitters, DPR
 │  │     └─ ui/                # egui: library, toolbar, overlays, dialogs, settings
-│  ├─ puzzles-cli/             # bin `puzzles-cli`: generate / solve / grade / test-solve /
+│  ├─ puzzles-cli/             # bin `puzzles-cli`: generate / solve / render / grade / test-solve /
 │  │                           #   benchmark / roundtrip (replaces *solver.exe, fuzzpuzz, benchmark.sh)
 │  └─ c-oracle/                # publish=false, test-only: builds third_party/puzzles-c via `cc`,
 │                              #   exposes them over FFI for differential tests
@@ -371,7 +375,7 @@ Implementations:
 | `midend_deserialise(read cb)` | `fn deserialise(&mut self, r: &mut impl io::Read) -> Result<(), DeserialiseError>` (`Invalid(C's message)` or `Io`); `identify_game(r)` |
 | `midend_load_prefs` / `midend_save_prefs`, `be_prefs` | `load_prefs` / `save_prefs` (C's file format); the saved preferences are kept as `ConfigItem`s, not serialised text |
 | newgame undo/redo buffers | a typed `Snapshot` of the old game (mid-end decision (c)) |
-| `<GAME>_DEFAULT`, `<GAME>_PRESETS`, `<GAME>_TILESIZE` getenv | `MidendOptions` (`from_lookup(name, lookup)` applies C's names and parsing); `STYLUS_BASED` is `MidendOptions::stylus_based` |
+| `<GAME>_DEFAULT`, `<GAME>_PRESETS`, `<GAME>_TILESIZE` getenv | `MidendOptions` (`from_lookup(name, lookup)` applies C's names and parsing; extra presets are a structured list, also filled from the user's `presets.toml`, see the "User presets" decision); `STYLUS_BASED` is `MidendOptions::stylus_based` |
 | `activate_timer`/`deactivate_timer`, `midend_redraw` calls, id-change callback | `wants_timer()`, `is_dirty()` + `redraw(&mut dyn DrawingApi)`, `take_id_changed()` |
 | `printf("%g")`, `atof` (the save file's `TIME`) | `parse::format_g`, `parse::atof` |
 | `fuzzpuzz` | `puzzles-cli roundtrip` (`puzzles_cli::roundtrip`) |
@@ -612,6 +616,7 @@ Everything else in this table comes after release 1.
 | **Simple game list** | 1 (foundation) | plain list of the 40 games with name and one-line description |
 | **Session restore** | 1 (foundation) | auto-save every game on exit or switch (midend serialise), resume on launch; no lost progress |
 | **Settings** | 1 (foundation) | global settings (theme, UI scale) and per-game preferences (C `get_prefs`/`set_prefs`), in one dialog |
+| **User presets** | 1 (foundation) | per-game presets from a hand-edited `presets.toml` (C parameter strings, submenus), hot-reloaded, listed after the built-ins |
 | **Sharing** | 1 (foundation) | copy/paste game ID or seed, drag-and-drop `.sav` files onto the window, open `.sav` from the OS file manager |
 | **Keyboard play** | 1 (foundation) | already provided by the back ends' cursor mode; the front end just maps keys (§4.5) |
 | **Rules and controls side panel** | **1 (the one extra)** | per-game rules and controls, converted once from `puzzles.but` to Markdown, shown in a collapsible side panel next to the puzzle (hidden in immersive mode) |
@@ -622,6 +627,7 @@ Everything else in this table comes after release 1.
 | Accessibility extras | later | high-contrast and colour-blind themes, reduced motion, screen-reader labels via AccessKit (built into egui), visible-focus polish |
 | Localisation | later | translated UI. To keep this cheap later, release 1 keeps all UI strings in one module, with no translation framework yet |
 | In-app theme editor | later | D7: colour pickers + live preview, writes theme TOML |
+| Save as preset | later | "save current parameters as a preset" from the custom-params dialog, writing `presets.toml` with `toml_edit` (comments kept) |
 | Command palette | later | optional |
 
 ### 4.5 Input mapping
@@ -682,7 +688,13 @@ generator would change every puzzle. So:
 | `serde` + `toml` | theme files |
 | `palette` | colour types, sRGB↔OKLab/OKLCH conversions for dark-theme auto-adaptation, contrast maths (replaces the planned hand-written OKLab code) |
 | `csscolorparser` (with `serde`) | theme authors can write any CSS colour syntax (`#1e1f22`, `rgb(…)`, `hsl(…)`, named colours) |
-| `notify` (feature-gated) | hot-reload of user theme files |
+| `notify` (feature-gated) | hot-reload of user theme files and `presets.toml` |
+
+#### Canvas (`puzzles-canvas`)
+| Crate | Provides |
+|---|---|
+| `tiny-skia` (with `png`) | persistent puzzle canvas; PNG export for thumbnails, `puzzles-cli render` and snapshot tests |
+| `ab_glyph` + bundled fonts | text in the canvas. **Inter** for `FONT_VARIABLE` and **JetBrains Mono** for `FONT_FIXED` (both OFL). The same two fonts are registered with egui for the app UI, so puzzles and app render identically on every OS. Noto Sans is added as a fallback with localisation |
 
 #### Desktop (`puzzles-desktop`)
 | Crate | Provides |
@@ -691,17 +703,16 @@ generator would change every puzzle. So:
 | `egui_extras` | images/SVG in the UI (icons; later, library thumbnails) |
 | `egui_commonmark` (or similar) | renders the per-game Markdown rules in the side panel (release 1) |
 | `egui-phosphor` (or similar icon font) | toolbar and menu icons |
-| `tiny-skia` (with `png`) | persistent puzzle canvas; PNG export for thumbnails and snapshot tests |
-| `ab_glyph` + bundled fonts | text in the canvas. **Inter** for `FONT_VARIABLE` and **JetBrains Mono** for `FONT_FIXED` (both OFL). The same two fonts are registered with egui for the app UI, so puzzles and app render identically on every OS. Noto Sans is added as a fallback with localisation |
 | `rfd` (`xdg-portal` on Linux) | native open/save dialogs |
 | `directories` | per-OS config/data paths |
-| `serde` + `toml` | app settings, window state, statistics (puzzle prefs and saves keep the C formats) |
+| `serde` + `toml` | app settings, window state, statistics, user presets (puzzle prefs and saves keep the C formats) |
+| *(later)* `toml_edit` | writing `presets.toml` from the app without losing the user's comments |
 | `rand` | fresh seeds for new games |
 | `env_logger` | log output |
 | *(Phase 9)* `fluent` or `rust-i18n` | localisation |
 
 #### CLI (`puzzles-cli`)
-`clap`, `anyhow`, `rand`, `env_logger`.
+`clap`, `anyhow`, `rand`, `env_logger`; `puzzles-canvas` for `render`.
 
 #### Dev, test and tooling
 | Crate / tool | Use |
@@ -759,7 +770,8 @@ Rejected alternatives:
 * *Toolkit:* ~~Native Win32 port of `windows.c`~~. Ruled out by the cross-platform requirement.
 
 Consequence for the code layout: egui-specific code is confined to
-`puzzles-desktop/src/ui/`. `app/` and `canvas/` don't depend on egui,
+`puzzles-desktop/src/ui/`. `app/` and the `puzzles-canvas` crate
+(canvas crate decision) don't depend on egui,
 which keeps them testable and would limit the blast radius of a
 toolkit change.
 
@@ -873,7 +885,7 @@ app. At acceptance, its draw-trace oracle test is converted to a snapshot (D1).
 | **0. Scaffolding** | workspace, lints, toolchain pin, `third_party/puzzles-c` submodule at `616da16`, `c-oracle` crate (C `random`/SHA-1 bindings + shim build), `cargo xtask ci`, **3-OS CI matrix** | oracle tests (SHA-1 vectors, golden `random_bits`/`random_upto` sequences) pass on Windows, macOS and Linux |
 | **1. Core algorithms** | port: random (on `sha1_smol`), misc, dsf, tdq, findloop (`petgraph` evaluated and rejected, see §5), matching, laydomino, divvy, latin. Adopt crates: `itertools` for combi, std collections + sorted-vec for tree234, `slice::sort_by` for sort.c; verify each against C | parity with C on property-generated inputs (including the crate-backed replacements); ports of `auxiliary/*-test.c` |
 | **2. Engine + walking skeleton** | the rest of `misc.c` (see the mapping table in §3.3), `Game` trait (**with `PALETTE` specs and DPR-aware sizing from day one**), `palette!` macro, `puzzles-theme` (model, resolver, Classic generated from the oracle), `Drawing`, `Midend<G>` (undo/redo, anim timing, game-ID/seed parsing, serialise/deserialise, presets, prefs), erased `dyn Puzzle`, `puzzles-cli` (`generate`, `solve`, `roundtrip`), **nullgame + flip + fifteen + guess** | the 3 games pass the full "done" bar headlessly, including palette parity |
-| **3. Desktop front end: foundation** | eframe app on all 3 OSes: tiny-skia canvas + text + blitters, **fluid resize + HiDPI**, **themes (Classic/Light/Dark/Follow-system, user TOML + hot reload)**, **full-screen + immersive mode**, toolbar + per-OS shortcuts, simple game library, presets/custom-params/game-ID/seed dialogs generated from `ConfigItem`s, per-game prefs, save/load (incl. drag-and-drop), session restore, timer, status overlay | the Phase-2 games are playable and look right in every theme on Windows, macOS and Linux |
+| **3. Desktop front end: foundation** | `puzzles-canvas` (tiny-skia + text + blitters, `puzzles-cli render`), eframe app on all 3 OSes: **fluid resize + HiDPI**, **themes (Classic/Light/Dark/Follow-system, user TOML + hot reload)**, **full-screen + immersive mode**, toolbar + per-OS shortcuts, simple game library, presets/custom-params/game-ID/seed dialogs generated from `ConfigItem`s, **user presets from `presets.toml`**, per-game prefs, save/load (incl. drag-and-drop), session restore, timer, status overlay | the Phase-2 games are playable and look right in every theme on Windows, macOS and Linux |
 | **4a. Simple games** | sixteen, twiddle, flood, pegs, samegame, blackbox, netslide, cube, inertia, mosaic, unruly | done bar |
 | **4b. Union-find family** | net, slant, range, filling, palisade, signpost, map, bridges, dominosa, tents, magnets, rect, galaxies, lightup, undead, tracks, pattern, untangle | done bar |
 | **4c. Latin family** | towers, unequal, keen, singles, solo | done bar |
@@ -1109,7 +1121,15 @@ at the top.
     Done bar: Flip, Fifteen and Guess pass everything that runs
     headless; canvas snapshots and manual play come with the desktop app.
 
-  Next: Phase 3, the desktop front end.
+- **Phase 3: in progress** (order in the decision log):
+  - user presets, engine side: `MidendOptions::extra_presets` is a
+    `PresetMenu<String>` of parameter strings, decoded and validated
+    when the mid-end builds its menu (invalid ones dropped, submenus
+    kept as in C). `parse_env_presets` is C's `<GAME>_PRESETS` parsing,
+    which `from_lookup` uses; front ends put their presets file's
+    entries before it. Titles may now contain `:`.
+
+  Next: `puzzles-canvas` and `puzzles-cli render`.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
