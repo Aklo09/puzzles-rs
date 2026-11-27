@@ -277,6 +277,7 @@ impl CSession {
     #[must_use]
     pub fn new(game: CGame, params: &str, desc: &str, tilesize: i32) -> Self {
         let (params, desc) = (c_string(params), c_string(desc));
+        let _globals = super::lock_c_globals();
         // SAFETY: valid game and strings; returns a fresh session.
         let s = unsafe { oracle_session_new(game.ptr(), params.as_ptr(), desc.as_ptr(), tilesize) };
         Self {

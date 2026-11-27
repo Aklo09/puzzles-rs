@@ -46,7 +46,11 @@ void deactivate_timer(frontend *fe)
         fe->timer = false;
 }
 
-/* The seed the next midend_new gets (set by oracle_midend_new). */
+/*
+ * The seed the next midend_new gets (set by oracle_midend_new). Global,
+ * as C's front-end interface is; Rust callers hold a lock around every
+ * call that creates a mid-end (ffi::C_GLOBALS).
+ */
 static const char *next_seed = "";
 static int next_seed_len = 0;
 
@@ -277,7 +281,9 @@ int oracle_midend_which_preset(oracle_midend *om)
 /* A config dialog as text: the title, then a line per item:
  * name|keyword|type|value, the value being the string, the selected
  * index and the choice names joined by ',' (then '/' and the keywords),
- * or 0/1. NULL if there is no dialog. */
+ * or 0/1. NULL if there is no dialog. Keywords exist only in the
+ * preferences dialog (C leaves `kw` and `choicekws` unset elsewhere), so
+ * other dialogs show '-' and no keywords. */
 char *oracle_midend_get_config(oracle_midend *om, int which)
 {
     char *title;
@@ -292,7 +298,8 @@ char *oracle_midend_get_config(oracle_midend *om, int which)
     sfree(title);
     for (i = 0; cfg[i].type != C_END; i++) {
         char num[32];
-        const char *kw = cfg[i].kw ? cfg[i].kw : "-";
+        bool prefs = which == CFG_PREFS;
+        const char *kw = prefs && cfg[i].kw ? cfg[i].kw : "-";
         buffer_write(&b, cfg[i].name, strlen(cfg[i].name));
         buffer_write(&b, "|", 1);
         buffer_write(&b, kw, strlen(kw));
@@ -305,7 +312,7 @@ char *oracle_midend_get_config(oracle_midend *om, int which)
             break;
           case C_CHOICES: {
             const char *names = cfg[i].u.choices.choicenames;
-            const char *kws = cfg[i].u.choices.choicekws;
+            const char *kws = prefs ? cfg[i].u.choices.choicekws : NULL;
             int j;
             sprintf(num, "choices|%d|", cfg[i].u.choices.selected);
             buffer_write(&b, num, strlen(num));

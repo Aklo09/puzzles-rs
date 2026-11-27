@@ -38,6 +38,17 @@ pub use random::{CRandom, sha1};
 pub use tdq::CTdq;
 
 use std::ffi::c_void;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// Held around C calls that create a mid-end: `midend_new` reads the
+/// harness's global seed (C's `get_random_seed` interface has nowhere
+/// else to put it), and tests run in parallel threads.
+static C_GLOBALS: Mutex<()> = Mutex::new(());
+
+fn lock_c_globals() -> MutexGuard<'static, ()> {
+    // A panic while holding it leaves nothing half-done in C.
+    C_GLOBALS.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 unsafe extern "C" {
     /// `malloc.c`: frees memory the C code allocated (`smalloc`, `dupstr`).

@@ -162,6 +162,7 @@ impl CMidend {
     #[must_use]
     pub fn new(game: CGame, seed: &[u8], interactive: bool) -> Self {
         let len = c_int::try_from(seed.len()).expect("fits in an int");
+        let _globals = super::lock_c_globals();
         // SAFETY: valid game and seed buffer (copied during the call).
         let om = unsafe { oracle_midend_new(game.ptr(), seed.as_ptr().cast(), len, interactive) };
         Self {

@@ -27,6 +27,7 @@ typedef struct recorder {
     char *text;
     size_t len, size;
     char *status;                      /* last status bar text, or NULL */
+    midend *status_midend;             /* see oracle_game_recorder_new */
 } recorder;
 
 static void rec_printf(drawing *dr, const char *fmt, ...)
@@ -210,6 +211,7 @@ static recorder *new_recorder(void)
     rec->text = snewn(rec->size, char);
     rec->text[0] = '\0';
     rec->status = NULL;
+    rec->status_midend = NULL;
     return rec;
 }
 
@@ -223,14 +225,16 @@ drawing *oracle_recorder_new(void)
  * A recording drawing for a game's redraws, which also keeps the status
  * bar text. drawing.c's status_bar passes the text through
  * midend_rewrite_statusbar, which needs a mid-end; a mid-end for the
- * null game (untimed) passes it on unchanged.
+ * null game (untimed) passes it on unchanged. Each recorder has its own:
+ * the rewrite changes the mid-end, and tests run in parallel threads.
+ * (midend_new reads the harness's seed; callers hold the Rust-side lock
+ * on C's globals.)
  */
 drawing *oracle_game_recorder_new(void)
 {
-    static midend *status_midend;
-    if (!status_midend)
-        status_midend = midend_new(NULL, &nullgame, NULL, NULL);
-    return drawing_new(&game_recorder_api, status_midend, new_recorder());
+    recorder *rec = new_recorder();
+    rec->status_midend = midend_new(NULL, &nullgame, NULL, NULL);
+    return drawing_new(&game_recorder_api, rec->status_midend, rec);
 }
 
 /*
@@ -296,8 +300,10 @@ const char *oracle_recorder_text(drawing *dr)
 void oracle_recorder_free(drawing *dr)
 {
     recorder *rec = GET_HANDLE_AS_TYPE(dr, recorder);
+    drawing_free(dr);
+    if (rec->status_midend)
+        midend_free(rec->status_midend);
     sfree(rec->text);
     sfree(rec->status);
     sfree(rec);
-    drawing_free(dr);
 }
