@@ -996,8 +996,12 @@ at the top.
   - `%g` of a NaN `TIME` is platform-dependent in C (`-nan` on glibc);
     Rust always writes `nan`.
   - Guess: C submits on Enter with the cursor on the marking pegs even
-    when the guess is no longer complete, and its mid-end then aborts on
-    the rejected move; the port only shows the cursor there. With the
+    when the guess isn't markable. Its `execute_move` takes repeated
+    colours and all-blank rows, so those are real moves in both (the
+    port refused them until CI found a hint, a drag and Enter
+    submitting a repeat); a row with blank pegs
+    where blanks aren't allowed makes C's mid-end abort, and the port
+    only shows the cursor there. With the
     cursor on the marking pegs, C's `d` reads (and may write) past its
     peg array; the port does nothing. As in C, keypad digits don't place
     pegs, and with 10 colours `:` places colour 10.
