@@ -19,6 +19,7 @@ puzzles-core.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+puzzles-theme.workspace = true
 
 [lints]
 workspace = true

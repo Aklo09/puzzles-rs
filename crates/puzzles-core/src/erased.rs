@@ -12,7 +12,7 @@ use crate::config::ConfigItem;
 use crate::drawing::DrawingApi;
 use crate::game::{Game, GameError, GameFlags, GameStatus, KeyLabel, Rect};
 use crate::midend::{Config, ConfigKind, DeserialiseError, KeyResult, Midend};
-use crate::palette::ColourSpec;
+use crate::palette::PaletteEntry;
 use crate::preset::PresetMenu;
 
 /// What a game can do, for enabling menu entries (the `CAN_*` consts
@@ -41,7 +41,7 @@ pub trait Puzzle {
     /// What the game can do.
     fn capabilities(&self) -> Capabilities;
     /// The game's colours (D7).
-    fn palette(&self) -> &'static [ColourSpec];
+    fn palette(&self) -> &'static [PaletteEntry];
 
     /// [`Midend::size`].
     fn size(
@@ -167,7 +167,7 @@ impl<G: Game> Puzzle for Midend<G> {
         }
     }
 
-    fn palette(&self) -> &'static [ColourSpec] {
+    fn palette(&self) -> &'static [PaletteEntry] {
         G::PALETTE
     }
 

@@ -40,7 +40,7 @@ impl Game for NullGame {
 
     const NAME: &'static str = "Null Game";
     const PREFERRED_TILESIZE: i32 = 20;
-    const PALETTE: &'static [puzzles_core::palette::ColourSpec] = Col::PALETTE;
+    const PALETTE: &'static [puzzles_core::palette::PaletteEntry] = Col::PALETTE;
 
     fn default_params() {}
 

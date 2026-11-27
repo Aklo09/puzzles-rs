@@ -29,18 +29,44 @@ void fatal(const char *fmt, ...)
  * Link-time placeholders for functions referenced by compiled sources but
  * not exercised by any oracle test yet. Each aborts loudly if called.
  * Delete each one when the real implementation is compiled into the
- * oracle: frontend_default_colour (misc.c's game_mkhighlight and the
- * games' colours()) with the theme work, document_add_puzzle with
- * printing. The other front-end functions are in midend_harness.c.
+ * oracle: document_add_puzzle with printing. The other front-end
+ * functions are in midend_harness.c.
  */
 static void not_in_oracle(const char *name)
 {
     fatal("%s is not available in the oracle yet", name);
 }
 
+/*
+ * The puzzle background colour front ends supply: 0.9 grey, as the GTK 3,
+ * headless and web front ends do. The Classic theme reproduces C with it
+ * (Classic theme decision (a)).
+ */
 void frontend_default_colour(frontend *fe, float *output)
 {
-    not_in_oracle("frontend_default_colour");
+    output[0] = output[1] = output[2] = 0.9F;
+}
+
+/* A game's colours() (with the default colour above): up to max colours
+ * into out, three floats each; returns how many the game has. */
+int oracle_game_colours(const game *g, float *out, int max)
+{
+    int n, i;
+    float *c = g->colours(NULL, &n);
+    for (i = 0; i < n * 3 && i < max * 3; i++)
+        out[i] = c[i];
+    sfree(c);
+    return n;
+}
+
+/* game_mkhighlight_specific on one base colour: out holds the (possibly
+ * moved) base, the highlight and the lowlight, three floats each. */
+void oracle_mkhighlight(const float base[3], float out[9])
+{
+    int i;
+    for (i = 0; i < 3; i++)
+        out[i] = base[i];
+    game_mkhighlight_specific(NULL, out, 0, 1, 2);
 }
 
 /* Printing (midend_print_puzzle) is not compiled in yet. */

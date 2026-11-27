@@ -104,11 +104,28 @@ fn check<G: Game>() {
 
     // Palette.
     assert_eq!(
-        G::PALETTE.first(),
-        Some(&ColourSpec::Role(Role::Background)),
+        G::PALETTE.first().map(|e| e.spec),
+        Some(ColourSpec::Role(Role::Background)),
         "{name}: colour 0 is the background, as in C"
     );
-    for spec in G::PALETTE {
+    // Classic has every colour the game needs (its C colours, checked
+    // against C by c-oracle's theme_parity).
+    if let Err(e) = puzzles_theme::ThemeSet::builtin().resolve("Classic", name, G::PALETTE) {
+        panic!("{name}: Classic can't colour it: {e}");
+    }
+    let mut keys: Vec<String> = G::PALETTE
+        .iter()
+        .map(puzzles_core::palette::PaletteEntry::key)
+        .collect();
+    keys.sort();
+    keys.dedup();
+    assert_eq!(
+        keys.len(),
+        G::PALETTE.len(),
+        "{name}: palette names are distinct"
+    );
+    for entry in G::PALETTE {
+        let spec = &entry.spec;
         if let ColourSpec::Derived { base, op } = spec {
             let in_range = |ColourRef(i): ColourRef| i < G::PALETTE.len();
             assert!(in_range(*base), "{name}: {spec:?} derives from nothing");

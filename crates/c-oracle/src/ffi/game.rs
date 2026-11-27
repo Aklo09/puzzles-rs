@@ -26,6 +26,9 @@ unsafe extern "C" {
     static flip: GameC;
     static nullgame: GameC;
 
+    fn oracle_game_colours(g: *const GameC, out: *mut f32, max: c_int) -> c_int;
+    fn oracle_mkhighlight(base: *const f32, out: *mut f32);
+
     fn oracle_encode_params(g: *const GameC, params: *const c_char, full: bool) -> *mut c_char;
     fn oracle_validate_params(g: *const GameC, params: *const c_char, full: bool) -> *const c_char;
     fn oracle_preset(g: *const GameC, i: c_int, name: *mut *mut c_char) -> *mut c_char;
@@ -140,6 +143,22 @@ impl CGame {
 
     pub(super) fn ptr(self) -> *const GameC {
         self.0
+    }
+
+    /// The game's `colours()`, with the oracle's default background (0.9
+    /// grey): one RGB triple per palette entry.
+    ///
+    /// # Panics
+    /// If the game has more than 256 colours.
+    #[must_use]
+    pub fn colours(self) -> Vec<[f32; 3]> {
+        const MAX: usize = 256;
+        let mut out = vec![0.0_f32; MAX * 3];
+        // SAFETY: valid game; `out` holds MAX triples.
+        let n = unsafe { oracle_game_colours(self.ptr(), out.as_mut_ptr(), MAX as c_int) };
+        let n = usize::try_from(n).expect("a count");
+        assert!(n <= MAX, "too many colours");
+        out.as_chunks::<3>().0[..n].to_vec()
     }
 
     /// `encode_params(decode_params(default_params(), params), full)`.
@@ -410,4 +429,18 @@ impl CSession {
         unsafe { oracle_session_size(self.ptr(), tilesize, &raw mut x, &raw mut y) };
         (x, y)
     }
+}
+
+/// C's `game_mkhighlight_specific` on one base colour: the base (moved if
+/// it was too close to white or black), the highlight and the lowlight.
+#[must_use]
+pub fn c_mkhighlight(base: [f32; 3]) -> [[f32; 3]; 3] {
+    let mut out = [0.0_f32; 9];
+    // SAFETY: `base` holds 3 floats, `out` 9.
+    unsafe { oracle_mkhighlight(base.as_ptr(), out.as_mut_ptr()) };
+    [
+        [out[0], out[1], out[2]],
+        [out[3], out[4], out[5]],
+        [out[6], out[7], out[8]],
+    ]
 }
