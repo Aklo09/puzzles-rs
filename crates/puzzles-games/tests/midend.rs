@@ -291,3 +291,89 @@ fn registry_gives_erased_mid_ends() {
         "the template stays out"
     );
 }
+
+#[test]
+fn new_game_splits_into_begin_run_and_finish() {
+    // The same seeds, so the same random game either way.
+    let mut whole = Midend::<Flip>::new(b"split", true, MidendOptions::default());
+    whole.new_game();
+    let mut split = Midend::<Flip>::new(b"split", true, MidendOptions::default());
+    let job = split.begin_new_game();
+    assert!(job.generates());
+    assert_eq!(
+        split.get_game_id(),
+        None,
+        "nothing changes before finishing"
+    );
+    let generated = std::thread::spawn(move || job.run()).join().unwrap();
+    assert!(split.finish_new_game(generated.clone()));
+    assert_eq!(split.get_game_id(), whole.get_game_id());
+    assert_eq!(split.get_random_seed(), whole.get_random_seed());
+    assert!(!split.finish_new_game(generated), "a job finishes once");
+
+    // A descriptive ID needs no generation.
+    split.game_id("3x3:d074191345d1644c17058,f80").unwrap();
+    let job = split.begin_new_game();
+    assert!(!job.generates());
+    assert!(split.finish_new_game(job.run()));
+    assert_eq!(
+        split.get_game_id().as_deref(),
+        Some("3x3:d074191345d1644c17058,f80")
+    );
+}
+
+#[test]
+fn stale_new_game_jobs_change_nothing() {
+    let mut me = flip();
+    let before = me.get_game_id();
+    let params = *me.params();
+    let job = me.begin_new_game();
+    me.set_params(&params);
+    assert!(!me.finish_new_game(job.run()), "new parameters");
+    let first = me.begin_new_game();
+    let _second = me.begin_new_game();
+    assert!(!me.finish_new_game(first.run()), "a later New Game");
+    let mut other = flip();
+    assert!(
+        !other.finish_new_game(me.begin_new_game().run()),
+        "another mid-end's job"
+    );
+    // A dropped job leaves the game as it was.
+    drop(me.begin_new_game());
+    assert_eq!(me.get_game_id(), before);
+    let generated = me.begin_new_game().run();
+    assert!(me.finish_new_game(generated));
+    assert_ne!(me.get_game_id(), before);
+
+    // A new game ID while generating: the ID's game comes next.
+    let job = me.begin_new_game();
+    me.game_id("4x4").unwrap();
+    assert!(!me.finish_new_game(job.run()));
+    let generated = me.begin_new_game().run();
+    assert!(me.finish_new_game(generated));
+    assert!(me.get_game_id().unwrap().starts_with("4x4:"));
+}
+
+#[test]
+fn deferred_new_game_keys_ask_the_front_end() {
+    let options = MidendOptions {
+        defer_new_game: true,
+        ..MidendOptions::default()
+    };
+    let mut me = Midend::<Flip>::new(b"defer", true, options);
+    me.new_game();
+    let id = me.get_game_id();
+    assert_eq!(me.process_key(0, 0, Button::key('n')), KeyResult::NewGame);
+    assert_eq!(
+        me.process_key(0, 0, Button::new(ButtonKind::Ui(UiAction::NewGame))),
+        KeyResult::NewGame
+    );
+    assert_eq!(me.get_game_id(), id, "the front end starts it");
+}
+
+/// Jobs cross threads.
+const _: fn() = || {
+    fn send<T: Send>() {}
+    send::<puzzles_core::midend::NewGameJob>();
+    send::<puzzles_core::midend::GeneratedGame>();
+};

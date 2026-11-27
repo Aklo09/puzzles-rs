@@ -26,13 +26,21 @@ use puzzles_core::midend::{Midend, MidendOptions};
 pub struct GameInfo {
     /// The game's name (its `Game::NAME`), as in save files.
     pub name: &'static str,
+    /// A few words saying what kind of puzzle it is (upstream's
+    /// `DESCRIPTION` in `CMakeLists.txt`), such as "Sliding block puzzle".
+    pub description: &'static str,
+    /// What the player has to do, in one sentence (upstream's
+    /// `OBJECTIVE`).
+    pub objective: &'static str,
     new: fn(&[u8], bool, MidendOptions) -> Box<dyn Puzzle>,
 }
 
 impl GameInfo {
-    const fn of<G: Game>() -> Self {
+    const fn of<G: Game>(description: &'static str, objective: &'static str) -> Self {
         Self {
             name: G::NAME,
+            description,
+            objective,
             new: |seed, interactive, options| {
                 Box::new(Midend::<G>::new(seed, interactive, options))
             },
@@ -54,11 +62,20 @@ impl GameInfo {
 /// Every game built in, in C's order (alphabetical).
 pub const GAMES: &[GameInfo] = &[
     #[cfg(feature = "fifteen")]
-    GameInfo::of::<fifteen::Fifteen>(),
+    GameInfo::of::<fifteen::Fifteen>(
+        "Sliding block puzzle",
+        "Slide the tiles around to arrange them into order.",
+    ),
     #[cfg(feature = "flip")]
-    GameInfo::of::<flip::Flip>(),
+    GameInfo::of::<flip::Flip>(
+        "Tile inversion puzzle",
+        "Flip groups of squares to light them all up at once.",
+    ),
     #[cfg(feature = "guess")]
-    GameInfo::of::<guess::Guess>(),
+    GameInfo::of::<guess::Guess>(
+        "Combination-guessing puzzle",
+        "Guess the hidden combination of colours.",
+    ),
 ];
 
 /// The game with this name (as in save files), if it is built in.

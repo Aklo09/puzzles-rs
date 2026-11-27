@@ -25,6 +25,11 @@ pub struct MidendOptions {
     /// The front end is stylus-based, so games with stylus support see
     /// `MOD_STYLUS` on pointer events (C's `STYLUS_BASED` build flag).
     pub stylus_based: bool,
+    /// New Game keys make [`Midend::process_key`](super::Midend::process_key)
+    /// return [`KeyResult::NewGame`](super::KeyResult::NewGame) instead
+    /// of generating at once, so the front end can generate on another
+    /// thread. Not in C.
+    pub defer_new_game: bool,
 }
 
 impl MidendOptions {
@@ -49,6 +54,7 @@ impl MidendOptions {
                 .and_then(|v| scan_int(v.as_bytes()).map(|(ts, _)| ts))
                 .filter(|&ts| ts > 0),
             stylus_based: false,
+            defer_new_game: false,
         }
     }
 }

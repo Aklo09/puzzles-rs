@@ -216,3 +216,29 @@ fn text_fallback_picks_what_the_fonts_cover() {
     assert_eq!(c.text_fallback(&["\u{1F600}", "×", "x"]), Some("×"));
     assert_eq!(c.text_fallback(&["\u{1F600}"]), None);
 }
+
+#[test]
+fn everything_drawn_is_marked_changed() {
+    // Without any draw_update: what a primitive touches must still reach
+    // the screen, anti-aliased edges included.
+    let mut c = canvas(40, 40);
+    c.take_dirty();
+    c.draw_circle(20, 20, 6, Some(2), 1);
+    let d = c.take_dirty().expect("marked");
+    assert!(
+        d.left() <= 13 && d.top() <= 13 && d.right() >= 28 && d.bottom() >= 28,
+        "{d:?}"
+    );
+    c.draw_text(5, 35, FontType::Variable, 10, Align::CENTRE, 1, "7");
+    assert!(c.take_dirty().is_some());
+    c.clip(0, 0, 5, 5);
+    c.draw_line(0, 0, 39, 39, 1);
+    let d = c.take_dirty().expect("marked");
+    assert!(d.right() <= 5 && d.bottom() <= 5, "clipped: {d:?}");
+    c.unclip();
+    let bl = Blitter::new(4, 4);
+    c.blitter_save(&bl, 0, 0);
+    assert_eq!(c.take_dirty(), None, "saving changes nothing");
+    c.blitter_load(&bl, 30, 30);
+    assert_eq!(c.take_dirty(), IntRect::from_xywh(30, 30, 4, 4));
+}

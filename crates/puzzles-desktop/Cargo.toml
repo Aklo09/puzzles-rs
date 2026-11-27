@@ -11,5 +11,17 @@ publish.workspace = true
 name = "puzzles"
 path = "src/main.rs"
 
+[dependencies]
+eframe.workspace = true
+egui-phosphor.workspace = true
+puzzles-canvas.workspace = true
+puzzles-core.workspace = true
+puzzles-games = { workspace = true, default-features = true }
+puzzles-theme.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+
 [lints]
 workspace = true

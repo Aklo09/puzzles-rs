@@ -37,6 +37,7 @@ summarises them all.
 | — | Canvas crate | **Decided** 2026-11-27 | The tiny-skia `DrawingApi` canvas (shapes, clipping, blitters, text, PNG output) is its own crate, `puzzles-canvas`, depending only on `puzzles-core` and `puzzles-theme`, with no egui. `puzzles-games` tests use it for canvas snapshots, `puzzles-cli` gains a `render` command (a game ID or save file to PNG, in a chosen theme and size; flags settled in the canvas PR), and later thumbnails and a web build reuse it. Rejected: `puzzles-desktop/src/canvas/` with the app as lib + bin (snapshot tests stuck in the desktop crate, and rendering from the CLI would pull in eframe) |
 | — | Phase 3 order | **Decided** 2026-11-27 | One PR each, a playable game first: (1) `engine/extra-presets`: structured `MidendOptions::extra_presets`; (2) `ui/canvas`: `puzzles-canvas` (tiny-skia shapes, clip, blitters, `ab_glyph` text with bundled Inter + JetBrains Mono), Classic snapshots of Flip, Fifteen and Guess, `puzzles-cli render`; (3) `ui/shell`: eframe window with a playable game (game list, fluid resize + HiDPI, per-OS input table, timer and animation, status bar, toolbar + shortcuts, cancellable generation thread); (4) `ui/dialogs`: presets menu with `presets.toml`, custom-params/game-ID/seed dialogs from `ConfigItem`s, copy/paste IDs, settings with per-game prefs; (5) `ui/themes`: Light, Dark, Follow-system, egui `Visuals` from the theme, user themes + hot reload, theme lint, snapshots in every theme; (6) `ui/persistence`: `settings.toml`, `.sav` save/load, drag-and-drop, session restore, window state; (7) `ui/fullscreen`: full-screen, immersive mode, zoom and pan. Then manual play on two OSes. Rejected: themes before dialogs (a theme can't be judged without a playable game); one Phase 3 PR |
 | — | Canvas details | **Decided** 2026-11-27 | The canvas draws for looks and simple code, not to copy a C front end (only draw traces are compared with C; pixels are compared with our own snapshots). (a) Text: bold Inter / JetBrains Mono, `size` = em height in pixels; `ALIGN_VCENTRE` puts the middle of the capital height at `y`, so all strings share a baseline; `ALIGN_VNORMAL` is the true baseline; advance widths plus kerning, no shaping; start and baseline on whole pixels. Rejected: GTK's centring of each string's ink box (text bobs between tiles). (b) Shapes: rectangles without anti-aliasing; one-pixel lines through pixel centres with square caps (both ends included); polygons, circles and thick lines (round caps) anti-aliased; rectangular clip; blitters copy pixels, off-canvas areas load as nothing. (c) Snapshots: PNGs in `puzzles-games/tests/snapshots/canvas/`, read and written with tiny-skia's PNG support; a pixel passes within ±2/255 per channel (anti-aliasing differs slightly between CPU architectures); `UPDATE_SNAPSHOTS=1` rewrites them, a failure writes `*.new.png`. Rejected: exact comparison (fails across architectures for no visible reason); `image` + `image-compare` (similarity scores aren't needed for a per-pixel check). (d) `Blitter` carries a liveness token (`Blitter::watch`), so the canvas frees a dropped blitter's pixels at the next `start_draw` |
+| — | Desktop shell | **Decided** 2026-11-27 | (a) The app opens on a library screen (each game's name, upstream's one-line `DESCRIPTION`, its `OBJECTIVE` as a tooltip; both in the registry's `GameInfo`); a toolbar button (Cmd/Ctrl+G) returns to it, and the puzzle gets the whole window. Rejected: a game list in a side panel (takes width, and the rules panel will sit on the other side). (b) Toolbar icons from `egui-phosphor` (MIT). Rejected: `egui_material_icons`; text buttons. Because `egui-phosphor` 0.14 targets egui 0.36, the app uses eframe/egui 0.36 until it catches up. (c) eframe's wgpu renderer (Metal, DirectX 12, Vulkan). Rejected: glow (OpenGL, deprecated on macOS). (d) New Game is split: `Midend::begin_new_game` draws the seed and returns a `Send` `NewGameJob` (nothing else changes), `NewGameJob::run` calls the ported generator, `finish_new_game` installs the result unless the job is stale (another mid-end's, or params, game ID, loading or a later New Game changed what New Game means). `new_game` is the three in a row, so the C parity tests are unaffected. With `MidendOptions::defer_new_game`, New Game keys return `KeyResult::NewGame` instead of generating, because only the mid-end knows whether `n` is the game's own key. The app starts a thread per New Game; Cancel drops the result, but the thread runs on (no cancel points in the generators), so a generation that never ends keeps a core busy until the app quits. Rejected: generating on the UI thread for now. Also, chosen for the UI: Classic's light egui style until themes (PR 5); a bottom status bar; shortcuts Cmd (macOS) or Ctrl + N new, R restart, Z undo, Shift+Z (and Ctrl+Y off macOS) redo, G games, Q quit; Alt/Option-click is a middle click, and Ctrl-click a right click on macOS; only the canvas area that changed is uploaded. (e) UI tests use `egui_kittest`: behaviour tests drive the real `PuzzlesApp` without a renderer, so they run in CI on every OS; a `screenshots` test renders the main screens with wgpu to `target/ui-screenshots/` for review (no pixel assertions; skipped without a GPU adapter). Toolbar buttons carry accessible names, which screen readers need too |
 
 ---
 
@@ -703,7 +704,7 @@ generator would change every puzzle. So:
 | `eframe` / `egui` | window, menus, dialogs, clipboard, IME, AccessKit, a path to wasm (D6) |
 | `egui_extras` | images/SVG in the UI (icons; later, library thumbnails) |
 | `egui_commonmark` (or similar) | renders the per-game Markdown rules in the side panel (release 1) |
-| `egui-phosphor` (or similar icon font) | toolbar and menu icons |
+| `egui-phosphor` | toolbar and menu icons (desktop shell decision; it pins eframe/egui to 0.36 for now) |
 | `rfd` (`xdg-portal` on Linux) | native open/save dialogs |
 | `directories` | per-OS config/data paths |
 | `serde` + `toml` | app settings, window state, statistics, user presets (puzzle prefs and saves keep the C formats) |
@@ -721,6 +722,7 @@ generator would change every puzzle. So:
 | `cc` | `c-oracle`: compile the C sources for FFI differential tests |
 | `proptest` | property tests (core data structures, move codecs) |
 | `insta` | snapshot tests (descriptions, solver output, draw traces after acceptance) |
+| `egui_kittest` (0.36, `eframe` + `wgpu`) | UI tests of the real desktop app: widgets found through AccessKit, synthetic input, frames rendered with wgpu to PNGs for review (desktop shell decision) |
 | `criterion` or `divan` | benchmarks (generation time per preset, replaces `benchmark.sh` timings) |
 | `cargo-fuzz` + `arbitrary` | fuzzing save files and move strings (Linux/macOS CI) |
 | `cargo-packager` (tool) | installers per OS (Phase 8) |
@@ -912,7 +914,9 @@ run alongside Phases 4–5. Front-end and game work only meet at the
    `STANDALONE_PICTURE_GENERATOR`, `STANDALONE_SOAK_TEST`,
    `STANDALONE_OBFUSCATOR`). `STANDALONE_SOLVER` code is ported into
    `pub` solver functions for `puzzles-cli`. Port `Params` + encode/decode
-   + presets first, then add golden tests for encode/decode.
+   + presets first, then add golden tests for encode/decode. Register the
+   game in `puzzles_games::GAMES` with upstream's `DESCRIPTION` and
+   `OBJECTIVE` from `CMakeLists.txt`.
 2. Port `validate_desc`, `new_game`, `State`, then the generator (`new_desc`)
    and solver. The golden descriptions must match.
 3. Define the `Move` enum from the cases in C's `execute_move` (and the
@@ -1140,14 +1144,43 @@ at the top.
     positions, moves, upstream icons at 1× and 2×, a dragged peg over a
     blitter, peg labels).
 
-  Next: `ui/shell`, the eframe window with a playable game.
+  - the desktop shell (`puzzles-desktop`): an eframe 0.36 window
+    (wgpu) with the game library, a toolbar (Phosphor icons, tooltips
+    with the OS's shortcut), the puzzle canvas sized to the window in
+    physical pixels, centred on whole pixels and uploaded only where it
+    changed, keyboard and mouse input with drags, animations and the
+    timer, a status bar, and New Game on a worker thread behind a
+    "Generating…" overlay with Cancel. `app/` (layout maths, commands,
+    the `Session` owning the mid-end, canvas and generation) has unit
+    tests, including generation off the UI thread; `ui/` has tests for
+    the input and shortcut tables. In the core: the split New Game
+    (`begin_new_game`, `NewGameJob`, `finish_new_game`) and
+    `defer_new_game` / `KeyResult::NewGame`. Bundled Inter and JetBrains
+    Mono NL Regular for the app's own text. `egui_kittest` UI tests open
+    games from the library, play with the mouse and keys, and use the
+    toolbar, shortcuts and `n`; their screenshots found two bugs before
+    any manual run: Inter shadowed the Phosphor icons (now drawn in a
+    Phosphor-only family) and selectable labels swallowed clicks on the
+    library rows. Checking the real window on macOS (computer use, on a
+    throwaway `target/debug/PuzzlesDev.app` bundle, since only bundled
+    apps can be driven) found a third: dragging Guess pegs left dashes on
+    screen. The canvas was right, but its shapes reach a pixel past the
+    `draw_update` areas games report (a hint in C), so the screen upload
+    missed them. The canvas now records the bounds of everything it
+    draws; `dragging_leaves_nothing_behind_on_screen` renders the app
+    with wgpu and compares the screen with the canvas (20 stale pixels
+    before the fix, none after). The app also repaints when input left
+    the puzzle with changes to draw.
+
+  Next: `ui/dialogs`, the presets menu, `presets.toml`, the custom
+  parameters, game ID and seed dialogs, and settings.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
 still check it.
 
 **Deferred by design (decided when first needed, under the D5 policy):**
-the icon font; `criterion` vs `divan`; `fluent` vs
+`criterion` vs `divan`; `fluent` vs
 `rust-i18n`; the Markdown viewer crate. Swapping one for an equivalent
 crate is a normal review item, not a new decision.
 

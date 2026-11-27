@@ -163,8 +163,11 @@ impl Canvas {
         self.pixmap.height()
     }
 
-    /// The area changed since the last call (the union of the games'
-    /// `draw_update` calls and any refill), for uploading to the screen.
+    /// The area changed since the last call, for uploading to the screen:
+    /// everything drawn (with a pixel's margin for anti-aliasing), any
+    /// refill, and the games' `draw_update` calls. Games' `draw_update`
+    /// is only a hint in C, and the canvas's shapes can reach a pixel
+    /// past what a game reports, so the canvas doesn't rely on it.
     pub fn take_dirty(&mut self) -> Option<IntRect> {
         self.dirty.take()
     }
@@ -193,6 +196,39 @@ impl Canvas {
         }
     }
 
+    /// Records that pixels within `left..right` × `top..bottom` may have
+    /// changed (clipped to what drawing can touch).
+    fn touch(&mut self, left: f32, top: f32, right: f32, bottom: f32) {
+        let Some(visible) = self.visible() else {
+            return;
+        };
+        let clamp = |v: f32| v.clamp(-1e9, 1e9) as i32;
+        let rect = IntRect::from_ltrb(
+            clamp(left.floor()),
+            clamp(top.floor()),
+            clamp(right.ceil()),
+            clamp(bottom.ceil()),
+        )
+        .and_then(|r| r.intersect(&visible));
+        if let Some(rect) = rect {
+            self.dirty = Some(match self.dirty {
+                Some(d) => union(d, rect),
+                None => rect,
+            });
+        }
+    }
+
+    /// [`touch`](Self::touch) for a path's bounds, widened by `margin`.
+    fn touch_path(&mut self, path: &tiny_skia::Path, margin: f32) {
+        let b = path.bounds();
+        self.touch(
+            b.left() - margin,
+            b.top() - margin,
+            b.right() + margin,
+            b.bottom() + margin,
+        );
+    }
+
     fn set_mask(&mut self, rect: IntRect, value: u8) {
         let stride = self.width() as usize;
         let data = self.mask.data_mut();
@@ -207,6 +243,7 @@ impl Canvas {
         if self.clipped_out() {
             return;
         }
+        self.touch_path(&path, 1.0);
         let paint = paint(colour, true);
         let mask = clip_mask(self.clip, &self.mask);
         self.pixmap.fill_path(
@@ -223,6 +260,8 @@ impl Canvas {
         if self.clipped_out() {
             return;
         }
+        // Square and round caps reach half the width past the ends.
+        self.touch_path(&path, stroke.width / 2.0 + 1.0);
         let paint = paint(colour, true);
         let mask = clip_mask(self.clip, &self.mask);
         self.pixmap
@@ -276,6 +315,7 @@ impl DrawingApi for Canvas {
         let glyphs = text::layout(face, x, y, size, align, text);
         let width = self.width() as usize;
         let pixels = self.pixmap.pixels_mut();
+        let mut inked: Option<(i32, i32, i32, i32)> = None;
         text::rasterise(face, glyphs, |px, py, coverage| {
             if px < visible.left()
                 || px >= visible.right()
@@ -286,7 +326,14 @@ impl DrawingApi for Canvas {
             }
             let i = py as usize * width + px as usize;
             pixels[i] = blend(pixels[i], [r, g, b], coverage);
+            inked = Some(match inked {
+                Some((l, t, r, b)) => (l.min(px), t.min(py), r.max(px + 1), b.max(py + 1)),
+                None => (px, py, px + 1, py + 1),
+            });
         });
+        if let Some((l, t, r, b)) = inked {
+            self.touch(l as f32, t as f32, r as f32, b as f32);
+        }
     }
 
     fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32, colour: ColourIdx) {
@@ -299,6 +346,7 @@ impl DrawingApi for Canvas {
         if self.clipped_out() {
             return;
         }
+        self.touch(rect.left(), rect.top(), rect.right(), rect.bottom());
         let mask = clip_mask(self.clip, &self.mask);
         self.pixmap
             .fill_rect(rect, &paint(colour, false), Transform::identity(), mask);
@@ -474,6 +522,14 @@ impl DrawingApi for Canvas {
         if self.clipped_out() {
             return;
         }
+        let Some((w, h)) = self
+            .blitters
+            .get(&blitter.id())
+            .map(|s| (s.pixels.width() as f32, s.pixels.height() as f32))
+        else {
+            return;
+        };
+        self.touch(x as f32, y as f32, x as f32 + w, y as f32 + h);
         let Some(saved) = self.blitters.get(&blitter.id()) else {
             return;
         };
