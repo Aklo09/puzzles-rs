@@ -1011,6 +1011,11 @@ at the top.
     C copies the text. Files C writes re-save byte for byte.
   - `%g` of a NaN `TIME` is platform-dependent in C (`-nan` on glibc);
     Rust always writes `nan`.
+  - `%g` on macOS (libc seen on 27.2) keeps trailing zeros when the
+    value is an exact tie that rounds down to even (`1000005` →
+    `1.00000e+06`, not `1e+06`); glibc and MSVC follow the C standard,
+    and so does Rust. A save file's `TIME` differs only for such a tie of
+    at least 1,000,000 s; the oracle test normalises macOS's output.
   - Guess: C submits on Enter with the cursor on the marking pegs even
     when the guess isn't markable. Its `execute_move` takes repeated
     colours and all-blank rows, so those are real moves in both (the

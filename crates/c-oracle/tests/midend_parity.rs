@@ -885,18 +885,45 @@ fn upstream_save_files_round_trip() {
 // ---------------------------------------------------------------------
 // The TIME line
 
+/// C's `printf("%g")` as the C standard defines it. macOS's libc (seen
+/// on 27.2) keeps trailing zeros in the exponent form when the value is
+/// an exact tie that rounds down to even (`1000005` prints
+/// `1.00000e+06`); glibc and MSVC strip them, and so does `format_g`.
+fn c_format_g_standard(x: f64) -> String {
+    let c = c_format_g(x);
+    if cfg!(target_os = "macos")
+        && let Some((mantissa, exponent)) = c.split_once('e')
+        && mantissa.contains('.')
+    {
+        let mantissa = mantissa.trim_end_matches('0').trim_end_matches('.');
+        return format!("{mantissa}e{exponent}");
+    }
+    c
+}
+
+#[test]
+fn macos_printf_g_quirk_is_normalised() {
+    // The tie that found it (proptest), a tie that rounds up, and one
+    // that rounds down to a single digit.
+    assert_eq!(format_g(7_396_505.0), "7.3965e+06");
+    assert_eq!(c_format_g_standard(7_396_505.0), "7.3965e+06");
+    assert_eq!(c_format_g_standard(7_396_515.0), "7.39652e+06");
+    assert_eq!(c_format_g_standard(1_000_005.0), "1e+06");
+    assert_eq!(format_g(1_000_005.0), "1e+06");
+}
+
 proptest! {
     #[test]
     fn format_g_matches_printf(bits: u32) {
         let x = f64::from(f32::from_bits(bits));
         // C's NaN output depends on the platform ("-nan" on glibc).
         prop_assume!(!x.is_nan());
-        prop_assert_eq!(format_g(x), c_format_g(x));
+        prop_assert_eq!(format_g(x), c_format_g_standard(x));
     }
 
     #[test]
     fn format_g_matches_printf_on_times(t in 0.0_f32..100_000.0) {
-        prop_assert_eq!(format_g(f64::from(t)), c_format_g(f64::from(t)));
+        prop_assert_eq!(format_g(f64::from(t)), c_format_g_standard(f64::from(t)));
     }
 
     #[test]
