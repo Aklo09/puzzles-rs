@@ -82,15 +82,29 @@ impl PuzzleView {
 
     /// Draws the puzzle in the remaining space of `ui` and feeds it the
     /// frame's input.
-    pub fn show(&mut self, ui: &mut egui::Ui, session: &mut Session, mac: bool) -> Outcome {
+    /// Without `input` (a dialog is open), the puzzle only draws.
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        session: &mut Session,
+        mac: bool,
+        input: bool,
+    ) -> Outcome {
         let rect = ui.available_rect_before_wrap();
         let id = Id::new("puzzle");
         let response = ui.interact(rect, id, Sense::click_and_drag());
         // Keep the keyboard, arrows and Tab included, unless a dialog
-        // wants it.
-        if !ui.ctx().egui_wants_keyboard_input() {
+        // (no `input`) or a menu needs it. (Not `egui_wants_keyboard_input`:
+        // that is true whenever any widget has focus, the puzzle
+        // included, which would drop the lock below after one frame.)
+        if input && !egui::Popup::is_any_open(ui.ctx()) {
             ui.memory_mut(|m| {
-                m.request_focus(id);
+                // Only when it has lost focus: a request replaces egui's
+                // focus record, dropping the lock below, and egui then
+                // moves focus between widgets on the next arrow key.
+                if !m.has_focus(id) {
+                    m.request_focus(id);
+                }
                 m.set_focus_lock_filter(
                     id,
                     egui::EventFilter {
@@ -134,7 +148,8 @@ impl PuzzleView {
             self.shown = Some(shown);
         }
 
-        let Some(origin) = origin else {
+        let Some(origin) = origin.filter(|_| input) else {
+            self.held = None;
             return Outcome::Continue;
         };
         self.feed_input(ui, session, &response, origin, ppp, mac)

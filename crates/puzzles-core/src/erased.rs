@@ -129,6 +129,13 @@ pub trait Puzzle {
     fn set_preset(&mut self, id: usize) -> bool;
     /// [`Midend::which_preset`].
     fn which_preset(&self) -> Option<usize>;
+    /// [`Midend::set_extra_presets`].
+    fn set_extra_presets(&mut self, extra: PresetMenu<String>);
+    /// [`Midend::check_params`].
+    ///
+    /// # Errors
+    /// The game's message.
+    fn check_params(&self, text: &str) -> Result<(), GameError>;
 
     /// [`Midend::request_keys`].
     fn request_keys(&self) -> Vec<KeyLabel>;
@@ -314,6 +321,14 @@ impl<G: Game> Puzzle for Midend<G> {
 
     fn which_preset(&self) -> Option<usize> {
         Midend::which_preset(self)
+    }
+
+    fn set_extra_presets(&mut self, extra: PresetMenu<String>) {
+        Midend::set_extra_presets(self, extra);
+    }
+
+    fn check_params(&self, text: &str) -> Result<(), GameError> {
+        Midend::<G>::check_params(text)
     }
 
     fn request_keys(&self) -> Vec<KeyLabel> {

@@ -38,6 +38,8 @@ summarises them all.
 | — | Phase 3 order | **Decided** 2026-11-27 | One PR each, a playable game first: (1) `engine/extra-presets`: structured `MidendOptions::extra_presets`; (2) `ui/canvas`: `puzzles-canvas` (tiny-skia shapes, clip, blitters, `ab_glyph` text with bundled Inter + JetBrains Mono), Classic snapshots of Flip, Fifteen and Guess, `puzzles-cli render`; (3) `ui/shell`: eframe window with a playable game (game list, fluid resize + HiDPI, per-OS input table, timer and animation, status bar, toolbar + shortcuts, cancellable generation thread); (4) `ui/dialogs`: presets menu with `presets.toml`, custom-params/game-ID/seed dialogs from `ConfigItem`s, copy/paste IDs, settings with per-game prefs; (5) `ui/themes`: Light, Dark, Follow-system, egui `Visuals` from the theme, user themes + hot reload, theme lint, snapshots in every theme; (6) `ui/persistence`: `settings.toml`, `.sav` save/load, drag-and-drop, session restore, window state; (7) `ui/fullscreen`: full-screen, immersive mode, zoom and pan. Then manual play on two OSes. Rejected: themes before dialogs (a theme can't be judged without a playable game); one Phase 3 PR |
 | — | Canvas details | **Decided** 2026-11-27 | The canvas draws for looks and simple code, not to copy a C front end (only draw traces are compared with C; pixels are compared with our own snapshots). (a) Text: bold Inter / JetBrains Mono, `size` = em height in pixels; `ALIGN_VCENTRE` puts the middle of the capital height at `y`, so all strings share a baseline; `ALIGN_VNORMAL` is the true baseline; advance widths plus kerning, no shaping; start and baseline on whole pixels. Rejected: GTK's centring of each string's ink box (text bobs between tiles). (b) Shapes: rectangles without anti-aliasing; one-pixel lines through pixel centres with square caps (both ends included); polygons, circles and thick lines (round caps) anti-aliased; rectangular clip; blitters copy pixels, off-canvas areas load as nothing. (c) Snapshots: PNGs in `puzzles-games/tests/snapshots/canvas/`, read and written with tiny-skia's PNG support; a pixel passes within ±2/255 per channel (anti-aliasing differs slightly between CPU architectures); `UPDATE_SNAPSHOTS=1` rewrites them, a failure writes `*.new.png`. Rejected: exact comparison (fails across architectures for no visible reason); `image` + `image-compare` (similarity scores aren't needed for a per-pixel check). (d) `Blitter` carries a liveness token (`Blitter::watch`), so the canvas frees a dropped blitter's pixels at the next `start_draw` |
 | — | Desktop shell | **Decided** 2026-11-27 | (a) The app opens on a library screen (each game's name, upstream's one-line `DESCRIPTION`, its `OBJECTIVE` as a tooltip; both in the registry's `GameInfo`); a toolbar button (Cmd/Ctrl+G) returns to it, and the puzzle gets the whole window. Rejected: a game list in a side panel (takes width, and the rules panel will sit on the other side). (b) Toolbar icons from `egui-phosphor` (MIT). Rejected: `egui_material_icons`; text buttons. Because `egui-phosphor` 0.14 targets egui 0.36, the app uses eframe/egui 0.36 until it catches up. (c) eframe's wgpu renderer (Metal, DirectX 12, Vulkan). Rejected: glow (OpenGL, deprecated on macOS). (d) New Game is split: `Midend::begin_new_game` draws the seed and returns a `Send` `NewGameJob` (nothing else changes), `NewGameJob::run` calls the ported generator, `finish_new_game` installs the result unless the job is stale (another mid-end's, or params, game ID, loading or a later New Game changed what New Game means). `new_game` is the three in a row, so the C parity tests are unaffected. With `MidendOptions::defer_new_game`, New Game keys return `KeyResult::NewGame` instead of generating, because only the mid-end knows whether `n` is the game's own key. The app starts a thread per New Game; Cancel drops the result, but the thread runs on (no cancel points in the generators), so a generation that never ends keeps a core busy until the app quits. Rejected: generating on the UI thread for now. Also, chosen for the UI: Classic's light egui style until themes (PR 5); a bottom status bar; shortcuts Cmd (macOS) or Ctrl + N new, R restart, Z undo, Shift+Z (and Ctrl+Y off macOS) redo, G games, Q quit; Alt/Option-click is a middle click, and Ctrl-click a right click on macOS; only the canvas area that changed is uploaded. (e) UI tests use `egui_kittest`: behaviour tests drive the real `PuzzlesApp` without a renderer, so they run in CI on every OS; a `screenshots` test renders the main screens with wgpu to `target/ui-screenshots/` for review (no pixel assertions; skipped without a GPU adapter). Toolbar buttons carry accessible names, which screen readers need too |
+| — | Dialogs and presets | **Decided** 2026-11-27 | (a) Two toolbar dropdowns: **Type** (built-in presets, then `presets.toml`'s, then `<GAME>_PRESETS`'s, submenus, the current one ticked, "Custom…", problems with the file listed at the bottom) and **Game** ("Enter game ID…", "Enter random seed…", "Copy game ID", "Copy random seed", "Preferences…"), drawn with egui. Rejected: a native menu bar (`muda`): a second UI system to keep in sync and harder to test; it may come later for macOS's standard Window and Edit menus only. (b) Dialogs are egui modals generated from `ConfigItem`s; the game's error shows inside and the dialog stays open; OK on Custom or an ID starts the new game; Enter confirms, Esc cancels; buttons bottom right in the OS's order. (c) Files live in the app's own folder, `directories`' config dir plus `puzzles-rs` (macOS `~/Library/Application Support/puzzles-rs/`, Linux `~/.config/puzzles-rs/`, Windows `%APPDATA%\puzzles-rs\`): `presets.toml` and `prefs/<game>.conf` in C's format and C's naming, written through a temporary file. Rejected: sharing C's GTK folder. (d) Settings holds each game's preferences for now; global settings join it with themes (PR 5) and `settings.toml` (PR 6). (e) `presets.toml` is re-read when the Type menu opens if its modification time changed (`Midend::set_extra_presets` rebuilds the menu; `check_params` reports bad entries with their line). Rejected for now: a `notify` watcher (themes need one, and may bring it) |
+| — | Custom dialog field order | **Decided** 2026-11-27 | Every Custom dialog lists Width before Height. In C only Mosaic lists Height first; its port swaps the two in `configure` and `custom_params`, and its parity test swaps C's items before comparing, with a comment. A UI difference only: game IDs, save files and generated puzzles are unaffected. Rejected: the front end reordering fields by their (English) labels, a heuristic that localisation would break |
 
 ---
 
@@ -914,7 +916,9 @@ run alongside Phases 4–5. Front-end and game work only meet at the
    `STANDALONE_PICTURE_GENERATOR`, `STANDALONE_SOAK_TEST`,
    `STANDALONE_OBFUSCATOR`). `STANDALONE_SOLVER` code is ported into
    `pub` solver functions for `puzzles-cli`. Port `Params` + encode/decode
-   + presets first, then add golden tests for encode/decode. Register the
+   + presets first, then add golden tests for encode/decode. Custom
+   dialogs list Width before Height (field order decision; in C only
+   Mosaic differs). Register the
    game in `puzzles_games::GAMES` with upstream's `DESCRIPTION` and
    `OBJECTIVE` from `CMakeLists.txt`.
 2. Port `validate_desc`, `new_game`, `State`, then the generator (`new_desc`)
@@ -1177,8 +1181,26 @@ at the top.
     before the fix, none after). The app also repaints when input left
     the puzzle with changes to draw.
 
-  Next: `ui/dialogs`, the presets menu, `presets.toml`, the custom
-  parameters, game ID and seed dialogs, and settings.
+  - dialogs and presets (`ui/dialogs`): the Type and Game menus,
+    `presets.toml` re-read when the Type menu opens (errors listed in
+    the menu with their line), modal dialogs for Custom parameters, game
+    IDs, random seeds and preferences generated from `ConfigItem`s,
+    copying IDs to the clipboard, and preferences saved per game in C's
+    format in the app's folder and loaded when a game opens. In the core:
+    `Midend::set_extra_presets` and `check_params`. Tests never touch the
+    user's folder (`PuzzlesApp::with_dirs`). A flaky UI test found that
+    egui moved keyboard focus off the puzzle on an arrow key, so the next
+    arrow was lost: the puzzle re-requested focus every frame (which
+    drops egui's focus lock) and only while `egui_wants_keyboard_input`
+    was false (never, once it had focus). It now keeps focus unless a
+    dialog or menu is open; a regression test replays the board. The
+    real-window check (computer use) confirmed the menus, live reload of
+    `presets.toml`, the clipboard, pasting a game ID and preferences
+    applying at once, and found two dialog flaws, now fixed and tested:
+    the first field wasn't selected on opening (typing "0" over "8" gave
+    80), and the button row took the dialog's whole height.
+
+  Next: `ui/themes`, Light, Dark and Follow-system themes.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
