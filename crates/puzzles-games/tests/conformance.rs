@@ -97,7 +97,7 @@ fn check<G: Game>() {
             );
         }
 
-        let ui = G::new_ui(&state);
+        let ui = G::new_ui(Some(&state));
         let (w, h) = G::compute_size(params, G::PREFERRED_TILESIZE, &ui);
         assert!(w > 0 && h > 0, "{name}: empty puzzle area");
     }

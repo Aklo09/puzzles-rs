@@ -197,15 +197,23 @@ impl Button {
     /// The C button code, modifiers included.
     ///
     /// # Panics
-    /// If the kind is a key above `'\u{1ff}'` (C can't represent it).
+    /// If the kind is a key above `'\u{1ff}'` (C can't represent it);
+    /// [`try_to_raw`](Self::try_to_raw) returns `None` instead.
     #[must_use]
     pub fn to_raw(self) -> i32 {
+        self.try_to_raw()
+            .unwrap_or_else(|| panic!("{self:?} has no C code"))
+    }
+
+    /// The C button code, modifiers included, or `None` for a key above
+    /// `'\u{1ff}'`, which C can't represent.
+    ///
+    /// # Panics
+    /// Never: every other kind has a code.
+    #[must_use]
+    pub fn try_to_raw(self) -> Option<i32> {
         let code = match self.kind {
-            ButtonKind::Key(c) => {
-                let c = u32::from(c);
-                assert!(c < FIRST_NON_KEY, "key {c:#x} has no C code");
-                c
-            }
+            ButtonKind::Key(c) => Some(u32::from(c)).filter(|&c| c < FIRST_NON_KEY)?,
             kind => {
                 let index = NON_KEYS
                     .iter()
@@ -214,7 +222,7 @@ impl Button {
                 FIRST_NON_KEY + u32::try_from(index).expect("small index")
             }
         };
-        i32::try_from(code | self.mods.bits()).expect("C codes fit in i32")
+        Some(i32::try_from(code | self.mods.bits()).expect("C codes fit in i32"))
     }
 
     /// The mouse button and action, if this is a mouse event.

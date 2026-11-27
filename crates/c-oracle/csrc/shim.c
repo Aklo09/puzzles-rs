@@ -30,7 +30,8 @@ void fatal(const char *fmt, ...)
  * not exercised by any oracle test yet. Each aborts loudly if called.
  * Delete each one when the real implementation is compiled into the
  * oracle: frontend_default_colour (misc.c's game_mkhighlight and the
- * games' colours()) with the theme work.
+ * games' colours()) with the theme work, document_add_puzzle with
+ * printing. The other front-end functions are in midend_harness.c.
  */
 static void not_in_oracle(const char *name)
 {
@@ -42,15 +43,11 @@ void frontend_default_colour(frontend *fe, float *output)
     not_in_oracle("frontend_default_colour");
 }
 
-/*
- * drawing.c's status_bar passes the text through the mid-end, which adds
- * the timer for timed games. Without midend.c, pass it on unchanged; the
- * game recorder (recorder.c) is the only drawing with a status bar.
- * Delete when midend.c is compiled into the oracle.
- */
-char *midend_rewrite_statusbar(midend *me, const char *text)
+/* Printing (midend_print_puzzle) is not compiled in yet. */
+void document_add_puzzle(document *doc, const game *game, game_params *par,
+                         game_ui *ui, game_state *st, game_state *st2)
 {
-    return dupstr(text);
+    not_in_oracle("document_add_puzzle");
 }
 
 /*

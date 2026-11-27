@@ -15,6 +15,7 @@ mod game;
 mod latin;
 mod laydomino;
 mod matching;
+mod midend;
 mod misc;
 mod random;
 mod tdq;
@@ -31,11 +32,23 @@ pub use latin::{
 };
 pub use laydomino::c_domino_layout;
 pub use matching::{CMatching, c_matching, c_matching_with_scratch};
+pub use midend::{CMidend, c_atof, c_format_g, c_identify_game};
 pub use misc::{c_bin2hex, c_hex2bin, c_n_times_root_k, c_obfuscate_bitmap, c_shuffle};
 pub use random::{CRandom, sha1};
 pub use tdq::CTdq;
 
 use std::ffi::c_void;
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// Held around C calls that create a mid-end: `midend_new` reads the
+/// harness's global seed (C's `get_random_seed` interface has nowhere
+/// else to put it), and tests run in parallel threads.
+static C_GLOBALS: Mutex<()> = Mutex::new(());
+
+fn lock_c_globals() -> MutexGuard<'static, ()> {
+    // A panic while holding it leaves nothing half-done in C.
+    C_GLOBALS.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 unsafe extern "C" {
     /// `malloc.c`: frees memory the C code allocated (`smalloc`, `dupstr`).

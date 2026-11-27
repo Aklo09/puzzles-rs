@@ -25,6 +25,7 @@ mod oracle {
         "laydomino.c",
         "malloc.c",
         "matching.c",
+        "midend.c",
         "misc.c",
         "random.c",
         "sort.c",
@@ -46,6 +47,7 @@ mod oracle {
             PathBuf::from("csrc/shim.c"),
             PathBuf::from("csrc/recorder.c"),
             PathBuf::from("csrc/game_harness.c"),
+            PathBuf::from("csrc/midend_harness.c"),
         ];
         for shim in &shims {
             println!("cargo::rerun-if-changed={}", shim.display());

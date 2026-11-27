@@ -86,7 +86,7 @@ unsafe extern "C" {
     fn oracle_session_size(s: *mut SessionC, tilesize: c_int, x: *mut c_int, y: *mut c_int);
 }
 
-fn c_string(s: &str) -> CString {
+pub(super) fn c_string(s: &str) -> CString {
     CString::new(s).expect("no NUL in strings passed to C")
 }
 
@@ -94,7 +94,7 @@ fn c_string(s: &str) -> CString {
 ///
 /// # Safety
 /// `p` is NULL or a valid NUL-terminated string.
-unsafe fn borrowed(p: *const c_char) -> Option<String> {
+pub(super) unsafe fn borrowed(p: *const c_char) -> Option<String> {
     // SAFETY: as the caller promises.
     (!p.is_null()).then(|| unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned())
 }
@@ -103,7 +103,7 @@ unsafe fn borrowed(p: *const c_char) -> Option<String> {
 ///
 /// # Safety
 /// `p` is NULL or a valid NUL-terminated string from smalloc.
-unsafe fn owned(p: *mut c_char) -> Option<String> {
+pub(super) unsafe fn owned(p: *mut c_char) -> Option<String> {
     // SAFETY: as the caller promises.
     let s = unsafe { borrowed(p) };
     if !p.is_null() {
@@ -138,7 +138,7 @@ impl CGame {
         Self(unsafe { &nullgame })
     }
 
-    fn ptr(self) -> *const GameC {
+    pub(super) fn ptr(self) -> *const GameC {
         self.0
     }
 
@@ -277,6 +277,7 @@ impl CSession {
     #[must_use]
     pub fn new(game: CGame, params: &str, desc: &str, tilesize: i32) -> Self {
         let (params, desc) = (c_string(params), c_string(desc));
+        let _globals = super::lock_c_globals();
         // SAFETY: valid game and strings; returns a fresh session.
         let s = unsafe { oracle_session_new(game.ptr(), params.as_ptr(), desc.as_ptr(), tilesize) };
         Self {

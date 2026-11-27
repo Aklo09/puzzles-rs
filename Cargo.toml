@@ -21,6 +21,7 @@ itertools = "0.15"
 proptest = "1.12"
 sha1_smol = "1.0"
 sorted-vec = "0.8"
+thiserror = "2.0"
 
 [workspace.lints.rust]
 # `deny` rather than `forbid` so that exactly one place can opt out: the FFI

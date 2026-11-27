@@ -29,6 +29,7 @@ summarises them all.
 | — | Mid-end ↔ front end | **Decided** 2026-11-25 | No callbacks: the seed is passed to `Midend::new`, and the front end reads `wants_timer()`, `is_dirty()` and a take-once game-ID-changed flag after each call (replacing `activate_timer`/`deactivate_timer`, `get_random_seed`, `midend_request_id_changes`). Rejected: a `FrontEnd` callback trait (callbacks can't use the borrowed mid-end, so they'd only set flags) |
 | — | Phase 2 order | **Decided** 2026-11-25 | One PR each: core types (Button, config, presets, `palette!`, `DrawingApi` + blitter handles + `Drawing` helpers, rest of `misc.c`); `Game` trait + nullgame + Flip (game-level parity); mid-end + `dyn Puzzle` + save files and prefs; theme crate + Classic; CLI; Fifteen; Guess. Rejected: mid-end first, shaped by nullgame only |
 | — | `Game` trait details | **Decided** 2026-11-26 | (a) `new_game` and `execute_move` take `&mut GameCtx`, which collects mid-end requests (Mines' `supersede_desc(desc, privdesc)`) for the mid-end to apply after the call; other games ignore it. Rejected: a take-once poll hook on the state (needs a `RefCell` in Mines' layout); a wrapper return type. (b) Capabilities are `bool` consts defaulting to false (`CAN_CONFIGURE`, `CAN_SOLVE`, `CAN_FORMAT_AS_TEXT_EVER`, `WANTS_STATUSBAR`, `IS_TIMED`; `CAN_PRINT`/`CAN_PRINT_IN_COLOUR` join with printing in Phase 9); C's `flags` int is `const FLAGS: GameFlags` (bitflags); a generic conformance test checks each const against its method. Rejected: one bitflags for everything. (c) nullgame lives in `puzzles-games` behind a `nullgame` feature, not in `default` or the registry. Rejected: a `puzzles_core::testing` module. (d) `decode_move` returns `Result<Move, MoveParseError>`, a unit error: a rejected move is an error for developers (tests, logs, tools), while users still see the mid-end's generic C message. Rejected: `Option` (same information, but not typed as an error); an error with a reason per game (messages C never had, which users wouldn't see) |
+| — | Mid-end details | **Decided** 2026-11-26 | (a) `new_ui(Option<&State>)`: `None` is C's `new_ui(NULL)`, a UI used only to read and write preferences before or without a game; games handle it as C does. Rejected: a separate `Prefs` type (splits every C `game_ui`, and must mirror preference fields the UI changes at run time). (b) The mid-end never reads the environment: it takes `MidendOptions` (default params, extra presets, preferred tile size), which the front end or CLI fills from C's `<GAME>_DEFAULT`, `<GAME>_PRESETS` and `<GAME>_TILESIZE` with C's parsing, or later from settings; `<GAME>_COLOUR_n` is dropped (themes, D7). Rejected: `getenv` in the mid-end; dropping the hooks. (c) Undoing a New Game keeps the previous game as a typed snapshot (one struct: states, params, descriptions, aux, UI, timer) swapped back after C's same-params check, instead of C's serialise/deserialise round trip; the UI after the undo is the live one (UI may drift). Rejected: serialising like C |
 | — | Threading | **Decided** 2026-11-26 | The desktop app runs puzzle generation on one worker thread ("Generating…" overlay, cancel discards the result; the ported generators are unchanged); moves, undo, solving, redraw and animation stay on the UI thread. Game states stay single-threaded with `Rc` for shared parts; only `Params: Send + 'static` is required, since `new_desc` takes params + seed and returns a string. The web build can generate in place. Rejected: `Arc` + `Send + Sync` states for off-thread solving (solving is fast, mostly from `aux`; revisit per game if one proves slow) |
 
 ---
@@ -213,7 +214,7 @@ pub trait Game: 'static {
     fn timing_state(s: &Self::State, ui: &mut Self::Ui) -> bool { true }
 
     // UI and moves
-    fn new_ui(s: &Self::State) -> Self::Ui;
+    fn new_ui(s: Option<&Self::State>) -> Self::Ui;   // None: a prefs-only UI (C's new_ui(NULL))
     fn prefs(ui: &Self::Ui) -> Vec<ConfigItem> { .. }   // also set_prefs, encode_ui, decode_ui,
     // ...                                             //   request_keys, changed_state, current_key_label
     fn interpret_move(s: &Self::State, ui: &mut Self::Ui, ds: &Self::DrawState,
@@ -361,8 +362,16 @@ Implementations:
 | `solver_show_working` / `solver_recurse_depth` globals | `solver_log::SolverLog` (verbosity, depth, collected text), carried by each solver (`LatinSolver::log`) |
 | `config_item` union | `enum ConfigValue { String(String), Choices { names: Vec<&'static str>, selected: usize }, Bool(bool) }` |
 | `preset_menu` tree | `PresetMenu<P> { entries: Vec<PresetEntry<P>> }` with `enum PresetEntry { Preset{title, params, id}, Submenu{title, menu, id} }` |
+| `midend` | `midend::Midend<G>` (undo chain, generation, game IDs, animation and timer, sizing, presets, config dialogs, prefs, save files); `erased::Puzzle` is the object-safe face front ends hold as `Box<dyn Puzzle>`; `puzzles_games::GAMES`/`find(name)` is the registry |
+| `midend_state_entry` (`state`, `movestr`, `movetype`) | `Entry { state, step: Step }` with `Step::{NewGame, Move(M), Solve(M), Restart(desc)}`: typed moves (D4) |
+| `PKR_*`, `CFG_*` | `KeyResult` (ordered like C's codes, so combining keeps the smaller), `ConfigKind`; dialogs are `Config { title, items }` |
 | `midend_serialise(write cb)` | `fn serialise(&self, w: &mut impl io::Write) -> io::Result<()>` |
-| `midend_deserialise(read cb)` | `fn deserialise(r: &mut impl io::Read) -> Result<…, DeserialiseError>` |
+| `midend_deserialise(read cb)` | `fn deserialise(&mut self, r: &mut impl io::Read) -> Result<(), DeserialiseError>` (`Invalid(C's message)` or `Io`); `identify_game(r)` |
+| `midend_load_prefs` / `midend_save_prefs`, `be_prefs` | `load_prefs` / `save_prefs` (C's file format); the saved preferences are kept as `ConfigItem`s, not serialised text |
+| newgame undo/redo buffers | a typed `Snapshot` of the old game (mid-end decision (c)) |
+| `<GAME>_DEFAULT`, `<GAME>_PRESETS`, `<GAME>_TILESIZE` getenv | `MidendOptions` (`from_lookup(name, lookup)` applies C's names and parsing); `STYLUS_BASED` is `MidendOptions::stylus_based` |
+| `activate_timer`/`deactivate_timer`, `midend_redraw` calls, id-change callback | `wants_timer()`, `is_dirty()` + `redraw(&mut dyn DrawingApi)`, `take_id_changed()` |
+| `printf("%g")`, `atof` (the save file's `TIME`) | `parse::format_g`, `parse::atof` |
 | button ints + `MOD_*` | `struct Button { kind: ButtonKind, mods: Modifiers }` (bitflags) with `From<i32>`/`Into<i32>` for the save-file/UI-string paths |
 | `#ifdef STANDALONE_SOLVER` | solvers live in the game module as `pub` fns; `puzzles-cli` calls them; verbosity is a `SolverLog` parameter, not a global |
 | `atoi`, `sscanf("%d")`, `isdigit` loops on game IDs and moves | `parse::atoi`, `parse::scan_int`, `parse::skip_digits` on bytes: C's leniency (spaces, signs, trailing text); out-of-range numbers truncate a 64-bit `long`, as C on Linux and macOS (Windows C saturates at `i32`; both agree on every number that fits) |
@@ -964,6 +973,21 @@ at the top.
   - Flip: random shapes on 1 × 2 and 2 × 1 grids can never pass C's
     "no two shapes alike" check, so generation never ends there, in C as
     in Rust. The desktop app's cancellable generation thread covers it.
+  - C's mid-end only survives the call orders its front ends use; the
+    Rust one accepts any order. In C: `midend_size` before the first game
+    crashes (it sizes a missing draw state); a seed game ID followed by a
+    parameters-only one, then New Game, generates from a NULL seed;
+    Restart after a parameters-only game ID restarts from a NULL
+    description, and after new parameters from a description that may
+    not match them; `midend_get_game_id` asserts in between. Rust works,
+    does nothing, or answers `None` there (documented on each method).
+  - C keeps the pixel ratio of a user-chosen tile size in an `int`; Rust
+    keeps it exactly (UI only).
+  - Loaded move strings are written back canonically (D4): a hand-edited
+    file with a lenient move, such as Flip's `S2…`, re-saves as `S1…`.
+    C copies the text. Files C writes re-save byte for byte.
+  - `%g` of a NaN `TIME` is platform-dependent in C (`-nan` on glibc);
+    Rust always writes `nan`.
 
 - **Phase 2: in progress.** Done:
   - core types (`button`, `config`, `preset`, `game` result types,
@@ -990,7 +1014,22 @@ at the top.
     round trip and desktop play complete its done bar later in Phase 2
     and Phase 3.
 
-  Next: the mid-end, `dyn Puzzle`, save files and prefs.
+  - the mid-end (`midend`: `Midend<G>`, save files, preferences,
+    `MidendOptions`), `erased::Puzzle` and the game registry. The oracle
+    compiles `midend.c` behind a minimal C front end
+    (`csrc/midend_harness.c`, `CMidend`). With Flip, random front-end
+    scripts (sizing, new games, keys and mouse with modifiers, timer,
+    undo/redo including New Game undo, restart, solve, game IDs,
+    presets, parameters, dialogs, preferences, save and reload) match C
+    after every step: the whole save file, key results, timer requests,
+    undo/redo availability, status, text, game ID and seed, preset, tile
+    size, cursor, status bar and full redraws. Damaged save files (by
+    byte and by whole line) and preference files load with C's verdict
+    and message, `identify_game` agrees, upstream's `icons/flip.sav` and
+    `nullgame.sav` re-save byte for byte, and `flip.sav`'s seed
+    regenerates its description.
+
+  Next: the theme crate and Classic.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
