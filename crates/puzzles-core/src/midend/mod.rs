@@ -29,7 +29,7 @@ mod options;
 mod prefs;
 mod savefile;
 
-pub use options::MidendOptions;
+pub use options::{MidendOptions, parse_env_presets};
 pub use savefile::{DeserialiseError, identify_game};
 
 use crate::button::Button;
@@ -1371,9 +1371,7 @@ impl<G: Game> Midend<G> {
     pub fn presets(&mut self) -> &PresetMenu<usize> {
         if self.presets.is_none() {
             let mut menu = G::presets();
-            if let Some(extra) = self.options.extra_presets.clone() {
-                options::add_presets_from_text::<G>(&mut menu, &extra);
-            }
+            options::add_extra_presets::<G>(&mut menu, &self.options.extra_presets);
             self.presets = Some(number_presets::<G>(menu));
         }
         &self.presets.as_ref().expect("built above").menu

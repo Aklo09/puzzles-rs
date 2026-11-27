@@ -7,6 +7,7 @@
 use puzzles_core::button::{Button, ButtonKind, CursorKey, MouseAction, MouseButton, UiAction};
 use puzzles_core::game::GameStatus;
 use puzzles_core::midend::{ConfigKind, KeyResult, Midend, MidendOptions};
+use puzzles_core::preset::{PresetEntry, PresetMenu};
 use puzzles_games::flip::Flip;
 
 fn flip() -> Midend<Flip> {
@@ -226,6 +227,46 @@ fn options_come_from_cs_variables() {
         .tilesize,
         None
     );
+}
+
+#[test]
+fn structured_extra_presets_follow_the_built_ins() {
+    // What a front end builds from its presets file, then the variable.
+    let mut options = MidendOptions::from_lookup("Flip", |name| {
+        (name == "FLIP_PRESETS").then(|| "From env:4x4c".to_owned())
+    });
+    let mut file = PresetMenu::new();
+    file.add_preset("Wide: 7 by 3", "7x3r".to_owned());
+    let sub = file.add_submenu("Odd");
+    sub.add_preset("Broken", "0x0".to_owned());
+    sub.add_preset("9x9", "9x9".to_owned());
+    file.entries.append(&mut options.extra_presets.entries);
+    options.extra_presets = file;
+
+    let mut me = Midend::<Flip>::new(b"x", true, options);
+    let titles: Vec<String> = me
+        .presets()
+        .entries
+        .iter()
+        .map(|e| match e {
+            PresetEntry::Preset { title, .. } => title.clone(),
+            PresetEntry::Submenu { title, menu } => format!("{title} ({})", menu.entries.len()),
+        })
+        .collect();
+    assert_eq!(
+        titles[6..],
+        ["Wide: 7 by 3", "Odd (1)", "From env"],
+        "the file, its invalid preset dropped, then the variable"
+    );
+    let wide = me
+        .presets()
+        .presets()
+        .find(|(t, _)| *t == "Wide: 7 by 3")
+        .map(|(_, &id)| id);
+    let params = *me.preset_params(wide.expect("listed")).expect("a preset");
+    assert_eq!((params.w, params.h), (7, 3));
+    me.set_params(&params);
+    assert_eq!(me.which_preset(), wide);
 }
 
 #[allow(non_snake_case, reason = "reads like the type")]

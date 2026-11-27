@@ -5,14 +5,14 @@
 //! there, not in what games build.
 
 /// A menu of presets and submenus, in display order.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PresetMenu<P> {
     /// The entries, in display order.
     pub entries: Vec<PresetEntry<P>>,
 }
 
 /// One entry of a [`PresetMenu`].
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PresetEntry<P> {
     /// A preset: choosing it starts a game with `params`.
     Preset {
