@@ -836,7 +836,16 @@ proptest! {
 fn upstream_save_files_round_trip() {
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../third_party/puzzles-c/icons");
-    let flip = std::fs::read(dir.join("flip.sav")).expect("flip.sav");
+    // Git may check the submodule out with CRLF line ends (Windows);
+    // loaders skip CRs between lines, writers use LF.
+    let read = |name: &str| {
+        let bytes = std::fs::read(dir.join(name)).expect("an icon save file");
+        String::from_utf8(bytes)
+            .expect("ASCII")
+            .replace("\r\n", "\n")
+            .into_bytes()
+    };
+    let flip = read("flip.sav");
     let mut r = Midend::<Flip>::new(b"x", true, MidendOptions::default());
     r.deserialise(&mut flip.as_slice()).expect("loads");
     let mut out = Vec::new();
@@ -862,7 +871,7 @@ fn upstream_save_files_round_trip() {
         desc
     );
 
-    let null = std::fs::read(dir.join("nullgame.sav")).expect("nullgame.sav");
+    let null = read("nullgame.sav");
     let mut r =
         Midend::<puzzles_games::nullgame::NullGame>::new(b"x", true, MidendOptions::default());
     r.deserialise(&mut null.as_slice()).expect("loads");
