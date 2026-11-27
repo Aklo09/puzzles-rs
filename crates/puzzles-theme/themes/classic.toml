@@ -21,6 +21,9 @@ selected = [0.45, 0.45, 0.9]
 faint = [0.45, 0.45, 0.45]
 filled = [0.0, 0.0, 0.0]
 
+[game.fifteen.overrides]
+background = [0.8333334, 0.8333334, 0.8333334]
+
 [game.flip]
 right = [1.0, 1.0, 1.0]
 

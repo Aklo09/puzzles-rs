@@ -136,6 +136,12 @@ fn check<G: Game>() {
     }
 }
 
+#[cfg(feature = "fifteen")]
+#[test]
+fn fifteen() {
+    check::<puzzles_games::fifteen::Fifteen>();
+}
+
 #[cfg(feature = "flip")]
 #[test]
 fn flip() {

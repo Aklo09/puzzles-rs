@@ -151,7 +151,7 @@ mod tests {
     fn finds_games_by_name_or_key() {
         assert_eq!(find_game("FLIP").unwrap().name, "Flip");
         let err = find_game("flop").unwrap_err().0;
-        assert!(err.contains("games: Flip"), "{err}");
+        assert!(err.contains("games: ") && err.contains("Flip"), "{err}");
     }
 
     #[test]
