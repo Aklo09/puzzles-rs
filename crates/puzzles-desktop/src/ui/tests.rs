@@ -345,6 +345,44 @@ fn screenshots() {
     click_label(&mut h, "OK");
     h.run();
     save(&mut h, "dialog-custom-error");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    h.get_by_label("Settings").click();
+    h.run();
+    save(&mut h, "settings-light");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+
+    // The same in Dark, as when the system is dark.
+    h.input_mut().system_theme = Some(egui::Theme::Dark);
+    h.run_steps(3);
+    save(&mut h, "flip-dark");
+    h.get_by_label("Settings").click();
+    h.run();
+    save(&mut h, "settings-dark");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    for game in ["Guess", "Fifteen"] {
+        h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+        h.step();
+        if game == "Guess" {
+            h.run_steps(2);
+            save(&mut h, "library-dark");
+        }
+        open(&mut h, game);
+        save(&mut h, &format!("{}-dark", game.to_lowercase()));
+    }
+
+    // Classic: controls must stand out from its grey panel.
+    h.state_mut().settings = crate::app::settings::Settings {
+        follow_system: false,
+        theme: "Classic".to_owned(),
+        ..Default::default()
+    };
+    h.run_steps(2);
+    h.get_by_label("Settings").click();
+    h.run();
+    save(&mut h, "settings-classic");
 }
 
 // ---------------------------------------------------------------------
@@ -572,4 +610,164 @@ fn arrows_keep_working_after_one_that_does_nothing() {
         session(&h).can(Command::Undo),
         "arrows work after a toolbar click"
     );
+}
+
+// ---------------------------------------------------------------------
+// Themes
+
+fn background(h: &Harness<'_, PuzzlesApp>) -> puzzles_theme::Rgb {
+    session(h).background()
+}
+
+fn dark_ui(h: &Harness<'_, PuzzlesApp>) -> bool {
+    h.ctx.global_style().visuals.dark_mode
+}
+
+#[test]
+fn themes_follow_the_systems_appearance() {
+    let mut h = app();
+    h.input_mut().system_theme = Some(egui::Theme::Dark);
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    assert!(dark_ui(&h), "the app's own colours are dark");
+    assert!(
+        puzzles_theme::lightness(background(&h)) < 0.3,
+        "and the puzzle's"
+    );
+
+    h.input_mut().system_theme = Some(egui::Theme::Light);
+    h.run_steps(2);
+    assert!(!dark_ui(&h));
+    assert!(puzzles_theme::lightness(background(&h)) > 0.9);
+}
+
+#[test]
+fn settings_choose_a_theme_and_save_it() {
+    let dirs = test_dirs("settings");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    h.get_by_label("Settings").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::CheckBox, "Follow system appearance")
+        .click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::ComboBox, "Theme").click();
+    h.run_steps(2);
+    h.get_by_label("Classic").click();
+    h.run_steps(1);
+    click_label(&mut h, "OK");
+    h.run_steps(2);
+    assert!(!dialog_open(&h));
+    assert_eq!(background(&h), puzzles_theme::Rgb::grey(0.9), "Classic's");
+    let saved = std::fs::read_to_string(dirs.settings()).expect("saved");
+    assert!(
+        saved.contains("follow_system = false") && saved.contains("theme = \"Classic\""),
+        "{saved}"
+    );
+
+    // The next start uses it.
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    assert_eq!(background(&h), puzzles_theme::Rgb::grey(0.9));
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}
+
+#[test]
+fn user_themes_apply_while_the_app_runs() {
+    let dirs = test_dirs("user-themes");
+    std::fs::create_dir_all(dirs.themes()).unwrap();
+    std::fs::write(
+        dirs.settings(),
+        "follow_system = false\ntheme = \"Sepia\"\n",
+    )
+    .unwrap();
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    let light = background(&h);
+    std::fs::write(
+        dirs.themes().join("sepia.toml"),
+        "name = \"Sepia\"\nextends = \"Light\"\n[roles]\nbackground = [0.95, 0.9, 0.8]\n",
+    )
+    .unwrap();
+    // The watcher wakes the app; give the OS's file events time.
+    let start = Instant::now();
+    while background(&h) == light {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the theme applied"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+        h.step();
+    }
+    assert_eq!(background(&h), puzzles_theme::Rgb::new(0.95, 0.9, 0.8));
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}
+
+/// Clicks a node the way a real mouse does: press and release in
+/// separate frames.
+fn real_click(h: &mut Harness<'_, PuzzlesApp>, pos: Pos2) {
+    for pressed in [true, false] {
+        h.event(Event::PointerMoved(pos));
+        h.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+    }
+    h.run_steps(2);
+}
+
+/// A drop-down opened in a dialog is drawn above it, also the second
+/// time. In the real macOS window a second opening drew it hidden behind
+/// the dialog (see `dialogs::keep_popups_above`); the harness's input
+/// timing doesn't reproduce that, so this only guards the layer order.
+#[test]
+fn drop_downs_stay_above_their_dialog() {
+    let mut h = app();
+    h.run_steps(2);
+    let order = |h: &Harness<'_, PuzzlesApp>| -> Vec<egui::Id> {
+        h.ctx.memory(|m| {
+            m.layer_ids()
+                .filter(|l| l.order == egui::Order::Foreground)
+                .map(|l| l.id)
+                .collect()
+        })
+    };
+    open(&mut h, "Guess");
+    for round in 0..2 {
+        let gear = h.get_by_label("Settings").rect().center();
+        real_click(&mut h, gear);
+        // Cancelled each round, so "Follow system" is ticked again.
+        let tick = h
+            .get_by_role_and_label(Role::CheckBox, "Follow system appearance")
+            .rect()
+            .center();
+        real_click(&mut h, tick);
+        // Press and release in one frame, as synthetic clicks arrive.
+        h.get_by_role_and_label(Role::ComboBox, "Theme").click();
+        h.run_steps(3);
+        assert!(egui::Popup::is_any_open(&h.ctx), "round {round}: open");
+        let layers = order(&h);
+        let dialog = layers
+            .iter()
+            .position(|&id| id == egui::Id::new("settings-dialog"));
+        assert_eq!(layers.len(), 2, "round {round}: {layers:?}");
+        assert_eq!(
+            dialog,
+            Some(0),
+            "round {round}: the list is drawn above the dialog"
+        );
+        h.key_press(Key::Escape);
+        h.run_steps(2);
+        h.key_press(Key::Escape);
+        h.run_steps(2);
+        // As when the themes folder changes: the theme is applied again.
+        h.state_mut().applied_theme = None;
+        h.run_steps(2);
+    }
 }

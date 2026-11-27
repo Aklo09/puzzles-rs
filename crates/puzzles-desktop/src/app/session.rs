@@ -121,6 +121,29 @@ impl Session {
         Ok(session)
     }
 
+    /// Recolours the game in the theme `theme`, redrawing it in full.
+    ///
+    /// # Errors
+    /// The theme can't colour this game; the colours stay as they were.
+    pub fn set_theme(&mut self, themes: &ThemeSet, theme: &str) -> Result<(), String> {
+        let colours = themes
+            .resolve(theme, self.info.name, self.puzzle.palette())
+            .map_err(|e| format!("{}: {e}", self.info.name))?;
+        if let Some(canvas) = &mut self.canvas {
+            canvas.set_colours(&colours);
+            canvas.fill_background();
+        }
+        self.colours = colours;
+        self.puzzle.force_redraw();
+        Ok(())
+    }
+
+    /// The game's name.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        self.info.name
+    }
+
     /// What the game can do.
     #[must_use]
     pub fn capabilities(&self) -> Capabilities {

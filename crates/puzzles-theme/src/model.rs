@@ -128,7 +128,13 @@ pub struct Theme {
     pub series: BTreeMap<String, Vec<Rgb>>,
     /// Per-game colours, by game key.
     pub games: BTreeMap<String, GameColours>,
+    /// The app's own colours (`[ui]`: `panel`, `text`, `accent`); those
+    /// missing come from the roles.
+    pub ui: BTreeMap<String, Rgb>,
 }
+
+/// The keys a theme's `[ui]` section may set.
+pub const UI_KEYS: [&str; 3] = ["panel", "text", "accent"];
 
 /// Why a theme file couldn't be read.
 #[derive(Debug, thiserror::Error)]
@@ -144,10 +150,10 @@ pub enum ThemeError {
         /// What's wrong.
         message: String,
     },
-    /// A key that isn't a role or series.
+    /// A key that isn't a role, series or UI colour.
     #[error("unknown {kind} {key:?}")]
     UnknownKey {
-        /// "role" or "series".
+        /// "role", "series" or "ui".
         kind: &'static str,
         /// The key.
         key: String,
@@ -175,6 +181,8 @@ struct ThemeFile {
     series: BTreeMap<String, Vec<ColourText>>,
     #[serde(default)]
     game: BTreeMap<String, GameFile>,
+    #[serde(default)]
+    ui: BTreeMap<String, ColourText>,
 }
 
 #[derive(Deserialize)]
@@ -242,6 +250,13 @@ impl Theme {
                 .collect::<Result<_, _>>()?;
             theme.series.insert(key, colours);
         }
+        for (key, value) in file.ui {
+            if !UI_KEYS.contains(&key.as_str()) {
+                return Err(ThemeError::UnknownKey { kind: "ui", key });
+            }
+            let colour = parse_colour(&format!("ui.{key}"), value)?;
+            theme.ui.insert(key, colour);
+        }
         for (game, section) in file.game {
             let mut colours = GameColours::default();
             for (key, value) in section.specific {
@@ -294,6 +309,14 @@ impl Theme {
             if !colours.overrides.is_empty() {
                 let _ = writeln!(out, "\n[game.{game}.overrides]");
                 for (key, c) in &colours.overrides {
+                    let _ = writeln!(out, "{key} = {c}");
+                }
+            }
+        }
+        if !self.ui.is_empty() {
+            out += "\n[ui]\n";
+            for key in UI_KEYS {
+                if let Some(c) = self.ui.get(key) {
                     let _ = writeln!(out, "{key} = {c}");
                 }
             }

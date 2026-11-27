@@ -6,8 +6,9 @@
 //! * Linux: `~/.config/puzzles-rs/` (or `$XDG_CONFIG_HOME`)
 //! * Windows: `%APPDATA%\puzzles-rs\`
 //!
-//! Inside: `presets.toml` (hand-edited) and `prefs/<game>.conf` (C's
-//! preference file format, named as C names them).
+//! Inside: `settings.toml`, `presets.toml` and `themes/*.toml`
+//! (hand-edited), and `prefs/<game>.conf` (C's preference file format,
+//! named as C names them).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,18 @@ impl AppDirs {
     #[must_use]
     pub fn presets(&self) -> PathBuf {
         self.config.join("presets.toml")
+    }
+
+    /// The app's settings.
+    #[must_use]
+    pub fn settings(&self) -> PathBuf {
+        self.config.join("settings.toml")
+    }
+
+    /// The folder of the user's themes.
+    #[must_use]
+    pub fn themes(&self) -> PathBuf {
+        self.config.join("themes")
     }
 
     /// A game's preference file (C's `make_prefs_path` naming).

@@ -30,6 +30,8 @@ egui_kittest = { version = "0.36", features = ["eframe", "wgpu"] }
 hex = "0.4"
 insta = "1.49"
 itertools = "0.15"
+notify = "9.0"
+palette = { version = "0.7", default-features = false, features = ["std"] }
 pollster = "0.4"
 proptest = "1.12"
 rand = "0.10"
