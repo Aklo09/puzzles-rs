@@ -29,7 +29,7 @@ pub struct RustSession<G: Game> {
 impl<G: Game> RustSession<G> {
     pub fn new(params: &G::Params, desc: &str, tilesize: i32) -> Self {
         let cur = G::new_game(&mut GameCtx::new(), params, desc);
-        let ui = G::new_ui(&cur);
+        let ui = G::new_ui(Some(&cur));
         let mut ds = G::new_drawstate(&cur);
         G::set_size(&mut ds, params, tilesize);
         Self {

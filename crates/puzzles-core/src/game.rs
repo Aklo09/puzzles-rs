@@ -198,7 +198,11 @@ pub trait Game: 'static {
     // UI and moves
 
     /// A fresh UI for a game starting at `state`.
-    fn new_ui(state: &Self::State) -> Self::Ui;
+    ///
+    /// `state` is `None` for a UI that only holds preferences (C's
+    /// `new_ui(NULL)`): the mid-end reads and writes the preferences file
+    /// through one before or without a game.
+    fn new_ui(state: Option<&Self::State>) -> Self::Ui;
 
     /// The user preferences this game has, filled from `ui` (C's
     /// `get_prefs`).

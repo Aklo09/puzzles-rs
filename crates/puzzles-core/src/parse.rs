@@ -1,5 +1,6 @@
 //! C's lenient number parsing, as games use it on game IDs and move
-//! strings: `atoi`, `sscanf`'s `%d`, and skipping digits with `isdigit`.
+//! strings (`atoi`, `sscanf`'s `%d`, skipping digits with `isdigit`), and
+//! the float conversions of save files (`atof`, `printf`'s `%g`).
 //!
 //! The functions work on bytes, as C does, so a multi-byte UTF-8
 //! character is never a digit or a space and never splits.
@@ -64,6 +65,94 @@ pub fn skip_digits(s: &[u8]) -> &[u8] {
     &s[n..]
 }
 
+/// C's `atof` (`strtod` without the end pointer): the longest prefix
+/// that reads as a decimal number, infinity or NaN, after leading spaces;
+/// 0 if there is none.
+///
+/// Hexadecimal floats (`0x1p3`), which C also reads, give 0 here: no
+/// writer of these files produces them.
+///
+/// # Panics
+/// Never: the prefix handed to Rust's parser is ASCII by construction.
+#[must_use]
+pub fn atof(s: &[u8]) -> f64 {
+    let start = s.iter().position(|&b| !is_c_space(b)).unwrap_or(s.len());
+    let s = &s[start..];
+    let sign_len = usize::from(matches!(s.first(), Some(b'+' | b'-')));
+    let negative = s.first() == Some(&b'-');
+    let body = &s[sign_len..];
+    let lower: Vec<u8> = body.iter().take(8).map(u8::to_ascii_lowercase).collect();
+    let special = if lower.starts_with(b"inf") {
+        Some(f64::INFINITY)
+    } else if lower.starts_with(b"nan") {
+        Some(f64::NAN)
+    } else {
+        None
+    };
+    if let Some(v) = special {
+        return if negative { -v } else { v };
+    }
+
+    let digits = |s: &[u8]| s.iter().take_while(|b| b.is_ascii_digit()).count();
+    let int = digits(body);
+    let mut len = int;
+    let mut frac = 0;
+    if body.get(len) == Some(&b'.') {
+        frac = digits(&body[len + 1..]);
+        if int + frac > 0 {
+            len += 1 + frac;
+        }
+    }
+    if int + frac == 0 {
+        return 0.0;
+    }
+    if matches!(body.get(len), Some(b'e' | b'E')) {
+        let exp_sign = usize::from(matches!(body.get(len + 1), Some(b'+' | b'-')));
+        let exp_digits = digits(&body[(len + 1 + exp_sign).min(body.len())..]);
+        if exp_digits > 0 {
+            len += 1 + exp_sign + exp_digits;
+        }
+    }
+    let text = std::str::from_utf8(&s[..sign_len + len]).expect("ASCII digits");
+    text.parse().unwrap_or(0.0)
+}
+
+/// C's `printf("%g", x)`: six significant digits, in fixed or exponent
+/// notation (whichever C picks), without trailing zeros.
+///
+/// A NaN is `nan` whatever its sign, as on macOS (glibc writes a negative
+/// one as `-nan`); only a corrupt save file's `TIME` line can hold one.
+///
+/// # Panics
+/// Never: Rust's `{:e}` output always has an integer exponent.
+#[must_use]
+pub fn format_g(x: f64) -> String {
+    const PRECISION: i32 = 6;
+    if x.is_nan() {
+        return "nan".to_owned();
+    }
+    if x.is_infinite() {
+        return if x < 0.0 { "-inf" } else { "inf" }.to_owned();
+    }
+    // The exponent C's %e would print, after rounding to the precision.
+    let sci = format!("{:.*e}", (PRECISION - 1) as usize, x);
+    let (mantissa, exp) = sci.split_once('e').expect("Rust's {:e} has an exponent");
+    let exp: i32 = exp.parse().expect("an integer exponent");
+    let strip = |s: &str| -> String {
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_owned()
+        } else {
+            s.to_owned()
+        }
+    };
+    if (-4..PRECISION).contains(&exp) {
+        strip(&format!("{:.*}", (PRECISION - 1 - exp) as usize, x))
+    } else {
+        let sign = if exp < 0 { '-' } else { '+' };
+        format!("{}e{sign}{:02}", strip(mantissa), exp.abs())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -93,6 +182,43 @@ mod tests {
     fn atoi_without_digits_is_zero() {
         assert_eq!(atoi(b"abc"), 0);
         assert_eq!(atoi(b"\xc3\xa9"), 0);
+    }
+
+    #[test]
+    fn atof_reads_the_longest_number() {
+        assert_eq!(atof(b"12.5"), 12.5);
+        assert_eq!(atof(b"  -3e2xyz"), -300.0);
+        assert_eq!(atof(b"1e"), 1.0);
+        assert_eq!(atof(b"1e+"), 1.0);
+        assert_eq!(atof(b".5"), 0.5);
+        assert_eq!(atof(b"7."), 7.0);
+        assert_eq!(atof(b"."), 0.0);
+        assert_eq!(atof(b"x"), 0.0);
+        assert_eq!(atof(b"-"), 0.0);
+        assert_eq!(atof(b"INFinity"), f64::INFINITY);
+        assert!(atof(b"nan").is_nan());
+        assert_eq!(atof(b"0x10"), 0.0);
+    }
+
+    #[test]
+    fn format_g_matches_printf() {
+        for (x, s) in [
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (1.0, "1"),
+            (12.5, "12.5"),
+            (0.1, "0.1"),
+            (123_456.0, "123456"),
+            (1_234_567.0, "1.23457e+06"),
+            (999_999.5, "1e+06"),
+            (0.0001, "0.0001"),
+            (0.000_012_345, "1.2345e-05"),
+            (1e100, "1e+100"),
+            (f64::from(3.3_f32), "3.3"),
+            (f64::INFINITY, "inf"),
+        ] {
+            assert_eq!(format_g(x), s, "{x}");
+        }
     }
 
     #[test]

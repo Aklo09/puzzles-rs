@@ -6,9 +6,10 @@
  *
  * Like C front ends without one, it provides no text_fallback (so
  * drawing.c's ASCII fallback runs). The plain recorder has no
- * status_bar; the game recorder (oracle_game_recorder_new) keeps the
- * last status text apart from the trace, since Rust's Drawing hands it
- * to the mid-end rather than to the drawing API.
+ * status_bar; the game recorder (oracle_game_recorder_new, and the API
+ * C mid-ends get from oracle_game_recorder_api) keeps the last status
+ * text apart from the trace, since Rust's Drawing hands it to the
+ * mid-end rather than to the drawing API.
  */
 
 #include <stdarg.h>
@@ -220,15 +221,56 @@ drawing *oracle_recorder_new(void)
 
 /*
  * A recording drawing for a game's redraws, which also keeps the status
- * bar text. drawing.c's status_bar insists on a mid-end, which it only
- * passes to midend_rewrite_statusbar (a stub in shim.c), so any
- * non-NULL pointer does.
+ * bar text. drawing.c's status_bar passes the text through
+ * midend_rewrite_statusbar, which needs a mid-end; a mid-end for the
+ * null game (untimed) passes it on unchanged.
  */
 drawing *oracle_game_recorder_new(void)
 {
-    static char fake_midend;
-    return drawing_new(&game_recorder_api, (midend *)&fake_midend,
-                       new_recorder());
+    static midend *status_midend;
+    if (!status_midend)
+        status_midend = midend_new(NULL, &nullgame, NULL, NULL);
+    return drawing_new(&game_recorder_api, status_midend, new_recorder());
+}
+
+/*
+ * The same API and a fresh recorder handle, for a C mid-end to create
+ * its own drawing with (midend_harness.c). The handle functions below
+ * read and clear it.
+ */
+const drawing_api *oracle_game_recorder_api(void)
+{
+    return &game_recorder_api;
+}
+
+void *oracle_recorder_handle_new(void)
+{
+    return new_recorder();
+}
+
+const char *oracle_recorder_handle_text(void *handle)
+{
+    return ((recorder *)handle)->text;
+}
+
+const char *oracle_recorder_handle_status(void *handle)
+{
+    return ((recorder *)handle)->status;
+}
+
+void oracle_recorder_handle_clear(void *handle)
+{
+    recorder *rec = (recorder *)handle;
+    rec->len = 0;
+    rec->text[0] = '\0';
+}
+
+void oracle_recorder_handle_free(void *handle)
+{
+    recorder *rec = (recorder *)handle;
+    sfree(rec->text);
+    sfree(rec->status);
+    sfree(rec);
 }
 
 /* Empties the trace (the status text stays). */

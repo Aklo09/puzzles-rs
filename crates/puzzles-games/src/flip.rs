@@ -469,7 +469,7 @@ impl Game for Flip {
         }
     }
 
-    fn new_ui(_state: &State) -> Ui {
+    fn new_ui(_state: Option<&State>) -> Ui {
         Ui {
             cx: 0,
             cy: 0,

@@ -68,7 +68,7 @@ impl Game for NullGame {
         GameStatus::Ongoing
     }
 
-    fn new_ui((): &()) {}
+    fn new_ui(_state: Option<&()>) {}
 
     fn interpret_move(
         (): &(),

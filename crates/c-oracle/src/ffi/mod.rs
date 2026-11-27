@@ -15,6 +15,7 @@ mod game;
 mod latin;
 mod laydomino;
 mod matching;
+mod midend;
 mod misc;
 mod random;
 mod tdq;
@@ -31,6 +32,7 @@ pub use latin::{
 };
 pub use laydomino::c_domino_layout;
 pub use matching::{CMatching, c_matching, c_matching_with_scratch};
+pub use midend::{CMidend, c_atof, c_format_g, c_identify_game};
 pub use misc::{c_bin2hex, c_hex2bin, c_n_times_root_k, c_obfuscate_bitmap, c_shuffle};
 pub use random::{CRandom, sha1};
 pub use tdq::CTdq;
