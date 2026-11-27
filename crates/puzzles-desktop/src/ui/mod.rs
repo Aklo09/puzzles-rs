@@ -1,7 +1,8 @@
 //! The egui side of the app: the game library, the toolbar with its
 //! Type and Game menus, the puzzle view, the status bar, configuration
-//! dialogs and the "Generating…" overlay (desktop shell, and dialogs and
-//! presets decisions in `docs/porting-plan.md`).
+//! and Settings dialogs, themes, and the "Generating…" overlay (desktop
+//! shell, dialogs and presets, and themes decisions in
+//! `docs/porting-plan.md`).
 
 use eframe::egui;
 mod dialogs;
@@ -9,6 +10,7 @@ mod fonts;
 mod input;
 mod menus;
 mod puzzle_view;
+mod settings;
 mod shortcuts;
 
 use std::sync::Arc;
@@ -16,19 +18,30 @@ use std::time::Instant;
 
 use egui::{Align2, Frame, Margin, RichText};
 use egui_phosphor::regular as icon;
+use puzzles_core::midend::ConfigKind;
 use puzzles_games::{GAMES, GameInfo};
-use puzzles_theme::ThemeSet;
 
 use crate::app::command::Command;
 use crate::app::paths::AppDirs;
 use crate::app::session::{Outcome, Session};
+use crate::app::settings::Settings;
+use crate::app::themes::Themes;
 use crate::app::user_presets::PresetsFile;
+use crate::app::watch::FolderWatch;
 use dialogs::{Dialog, DialogAction};
 use menus::MenuAction;
 use puzzle_view::PuzzleView;
+use settings::{SettingsAction, SettingsDialog};
 
-/// The theme until themes can be chosen (Phase 3, `ui/themes`).
-const THEME: &str = "classic";
+/// The theme used when the chosen one can't be found.
+const FALLBACK_THEME: &str = "Light";
+
+/// An open dialog.
+#[derive(Debug)]
+enum OpenDialog {
+    Config(Dialog),
+    Settings(SettingsDialog),
+}
 
 /// What the window shows.
 enum Screen {
@@ -42,13 +55,17 @@ enum Screen {
 /// The app.
 pub struct PuzzlesApp {
     screen: Screen,
-    themes: ThemeSet,
+    themes: Themes,
+    settings: Settings,
+    /// The theme in use, once applied.
+    applied_theme: Option<String>,
+    theme_watch: Option<FolderWatch>,
     mac: bool,
     title: String,
     error: Option<String>,
     dirs: Option<AppDirs>,
     presets_file: Option<PresetsFile>,
-    dialog: Option<Dialog>,
+    dialog: Option<OpenDialog>,
 }
 
 /// What the toolbar asked for.
@@ -68,25 +85,88 @@ impl PuzzlesApp {
     /// nowhere).
     pub fn with_dirs(cc: &eframe::CreationContext<'_>, dirs: Option<AppDirs>) -> Self {
         fonts::install(&cc.egui_ctx);
-        // Classic is a light theme; themed app colours come with themes.
-        cc.egui_ctx.set_visuals(egui::Visuals::light());
         let presets_file = dirs.as_ref().map(|d| PresetsFile::new(d.presets()));
+        let (settings, mut error) = dirs.as_ref().map_or((Settings::default(), None), |d| {
+            Settings::load(&d.settings())
+        });
+        let themes = Themes::load(dirs.as_ref().map(AppDirs::themes).as_deref());
+        let repaint = cc.egui_ctx.clone();
+        let theme_watch = dirs.as_ref().and_then(|d| {
+            FolderWatch::new(&d.themes(), Arc::new(move || repaint.request_repaint()))
+                .map_err(|e| error = Some(format!("Watching themes: {e}")))
+                .ok()
+        });
         Self {
             screen: Screen::Library,
-            themes: ThemeSet::builtin(),
+            themes,
+            settings,
+            applied_theme: None,
+            theme_watch,
             mac: cfg!(target_os = "macos"),
             title: String::new(),
-            error: None,
+            error,
             dirs,
             presets_file,
             dialog: None,
         }
     }
 
+    /// The theme the settings and the system's appearance call for.
+    fn wanted_theme(&self, ctx: &egui::Context) -> String {
+        let system_dark = ctx.system_theme().map(|t| t == egui::Theme::Dark);
+        let wanted = self.settings.theme_for(system_dark);
+        if self.themes.set().get(wanted).is_some() {
+            wanted.to_owned()
+        } else {
+            FALLBACK_THEME.to_owned()
+        }
+    }
+
+    /// Re-reads the user's themes if they changed, and applies the theme
+    /// the settings call for if it isn't the one in use: egui's colours,
+    /// and the open game's.
+    fn update_theme(&mut self, ctx: &egui::Context) {
+        if self
+            .theme_watch
+            .as_ref()
+            .is_some_and(FolderWatch::take_changed)
+        {
+            self.themes = Themes::load(self.dirs.as_ref().map(AppDirs::themes).as_deref());
+            self.applied_theme = None;
+        }
+        let wanted = self.wanted_theme(ctx);
+        if self.applied_theme.as_deref() == Some(wanted.as_str()) {
+            return;
+        }
+        let theme = match self.themes.set().ui_colours(&wanted) {
+            Ok(ui) => {
+                let egui_theme = if ui.dark {
+                    egui::Theme::Dark
+                } else {
+                    egui::Theme::Light
+                };
+                ctx.set_theme(egui_theme);
+                ctx.set_visuals_of(egui_theme, settings::visuals(ui));
+                wanted
+            }
+            Err(e) => {
+                self.error = Some(format!("Theme {wanted:?}: {e}"));
+                FALLBACK_THEME.to_owned()
+            }
+        };
+        if let Screen::Game { session, .. } = &mut self.screen
+            && let Err(e) = session.set_theme(self.themes.set(), &theme)
+        {
+            session.notify(e);
+        }
+        self.applied_theme = Some(theme);
+    }
+
     fn open(&mut self, ctx: &egui::Context, info: &'static GameInfo) {
         let repaint = ctx.clone();
         let waker = Arc::new(move || repaint.request_repaint());
-        match Session::new(info, &self.themes, THEME, waker, self.dirs.as_ref()) {
+        let theme = self.applied_theme.as_deref().unwrap_or(FALLBACK_THEME);
+        match Session::new(info, self.themes.set(), theme, waker, self.dirs.as_ref()) {
             Ok(mut session) => {
                 if let Some(file) = &mut self.presets_file {
                     file.refresh();
@@ -103,14 +183,38 @@ impl PuzzlesApp {
         }
     }
 
+    /// Opens Settings, with the open game's preferences.
+    fn open_settings(&mut self) {
+        let game = match &self.screen {
+            Screen::Game { session, .. } => session
+                .config(ConfigKind::Prefs)
+                .filter(|c| !c.items.is_empty())
+                .map(|c| (session.name(), c.items)),
+            Screen::Library => None,
+        };
+        let dir = self.dirs.as_ref().map(|d| d.themes().display().to_string());
+        self.dialog = Some(OpenDialog::Settings(SettingsDialog::new(
+            self.settings.clone(),
+            game,
+            dir,
+        )));
+    }
+
     fn menu_action(&mut self, ctx: &egui::Context, action: MenuAction) {
+        if action == MenuAction::Settings {
+            self.open_settings();
+            return;
+        }
         let Screen::Game { session, .. } = &mut self.screen else {
             return;
         };
         match action {
+            MenuAction::Settings => {}
             MenuAction::Preset(id) => session.choose_preset(id),
             MenuAction::Dialog(kind) => {
-                self.dialog = session.config(kind).map(|c| Dialog::new(kind, c));
+                self.dialog = session
+                    .config(kind)
+                    .map(|c| OpenDialog::Config(Dialog::new(kind, c)));
             }
             MenuAction::CopyGameId => {
                 if let Some(id) = session.game_id() {
@@ -129,18 +233,45 @@ impl PuzzlesApp {
 
     /// Draws the open dialog and applies it on OK.
     fn dialog(&mut self, ctx: &egui::Context) {
-        let (Some(dialog), Screen::Game { session, .. }) = (&mut self.dialog, &mut self.screen)
-        else {
-            self.dialog = None;
-            return;
-        };
-        match dialog.show(ctx) {
-            DialogAction::Open => {}
-            DialogAction::Close => self.dialog = None,
-            DialogAction::Apply(kind, items) => match session.apply_config(kind, &items) {
-                Ok(()) => self.dialog = None,
-                Err(e) => dialog.set_error(e),
+        match &mut self.dialog {
+            Some(OpenDialog::Config(dialog)) => {
+                let Screen::Game { session, .. } = &mut self.screen else {
+                    self.dialog = None;
+                    return;
+                };
+                match dialog.show(ctx) {
+                    DialogAction::Open => {}
+                    DialogAction::Close => self.dialog = None,
+                    DialogAction::Apply(kind, items) => match session.apply_config(kind, &items) {
+                        Ok(()) => self.dialog = None,
+                        Err(e) => dialog.set_error(e),
+                    },
+                }
+            }
+            Some(OpenDialog::Settings(dialog)) => match dialog.show(ctx, &self.themes) {
+                SettingsAction::Open => {}
+                SettingsAction::Close => self.dialog = None,
+                SettingsAction::Apply(settings, prefs) => {
+                    if let (Some(items), Screen::Game { session, .. }) = (prefs, &mut self.screen)
+                        && let Err(e) = session.apply_config(ConfigKind::Prefs, &items)
+                    {
+                        dialog.set_error(e);
+                        return;
+                    }
+                    if settings != self.settings {
+                        if let Some(dirs) = &self.dirs
+                            && let Err(e) = settings.save(&dirs.settings())
+                        {
+                            dialog.set_error(format!("Saving settings: {e}"));
+                            return;
+                        }
+                        self.settings = settings;
+                        self.applied_theme = None;
+                    }
+                    self.dialog = None;
+                }
             },
+            None => {}
         }
     }
 
@@ -173,7 +304,13 @@ impl PuzzlesApp {
 
     fn library(&mut self, ui: &mut egui::Ui) {
         let mut chosen = None;
+        let mut settings = false;
         egui::CentralPanel::default().show(ui, |ui| {
+            egui::Sides::new().show(
+                ui,
+                |_| {},
+                |ui| settings = Self::settings_button(ui).clicked(),
+            );
             ui.vertical_centered(|ui| {
                 ui.set_max_width(520.0);
                 ui.add_space(24.0);
@@ -192,9 +329,24 @@ impl PuzzlesApp {
                 });
             });
         });
-        if let Some(info) = chosen {
+        if settings {
+            self.open_settings();
+        } else if let Some(info) = chosen {
             self.open(ui.ctx(), info);
         }
+    }
+
+    /// The gear that opens Settings.
+    fn settings_button(ui: &mut egui::Ui) -> egui::Response {
+        let glyph = RichText::new(icon::GEAR_SIX)
+            .size(20.0)
+            .family(fonts::icon_family());
+        let response = ui
+            .add(egui::Button::new(glyph).frame(false))
+            .on_hover_text("Settings");
+        response
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Settings"));
+        response
     }
 
     /// One game in the library: its name, and what kind of puzzle it is
@@ -249,6 +401,9 @@ impl PuzzlesApp {
                             }
                             if let Some(a) = menus::game_menu(ui, session) {
                                 clicked = Some(ToolbarAction::Menu(a));
+                            }
+                            if Self::settings_button(ui).clicked() {
+                                clicked = Some(ToolbarAction::Menu(MenuAction::Settings));
                             }
                             ui.separator();
                         }
@@ -333,6 +488,7 @@ impl PuzzlesApp {
 impl eframe::App for PuzzlesApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.update_theme(&ctx);
         let mut commands = Vec::new();
         if self.dialog.is_none() {
             ctx.input_mut(|i| {

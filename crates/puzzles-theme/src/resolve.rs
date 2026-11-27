@@ -7,13 +7,17 @@
 //!    theme or, if it has none, the theme it extends, and so on; a derived
 //!    entry is computed from its base entry (resolved the same way).
 //!
-//! Dark themes will adapt `Specific` values they inherit from a light
-//! parent (`OKLab` lightness), with the dark themes in Phase 3.
+//! A dark theme that extends a light one adapts what it takes from it
+//! (themes decision): roles and `Specific` values found in the light
+//! theme, and every `Derived` entry (computed as in the light theme), are
+//! mirrored around the background in `OKLab` ([`Mirror`]). Its own values
+//! and overrides, and all series, are used as they are.
 
 use std::collections::BTreeMap;
 
 use puzzles_core::palette::{ColourSpec, DeriveOp, PaletteEntry, Role, Series};
 
+use crate::adapt::Mirror;
 use crate::colour::{Rgb, bevel, mix};
 use crate::model::{Theme, game_key, role_key, series_key};
 
@@ -66,10 +70,14 @@ pub struct ThemeSet {
 }
 
 /// The themes built into the collection.
-const BUILT_IN: &[&str] = &[include_str!("../themes/classic.toml")];
+const BUILT_IN: &[&str] = &[
+    include_str!("../themes/classic.toml"),
+    include_str!("../themes/light.toml"),
+    include_str!("../themes/dark.toml"),
+];
 
 impl ThemeSet {
-    /// The built-in themes: Classic, reproducing C's colours.
+    /// The built-in themes: Classic (C's colours), Light and Dark.
     ///
     /// # Panics
     /// If a built-in theme file is broken (tests check them).
@@ -127,36 +135,132 @@ impl ThemeSet {
         palette: &[PaletteEntry],
     ) -> Result<Vec<Rgb>, ResolveError> {
         let chain = self.chain(theme)?;
+        let game = game_key(game_name);
+        // A dark theme adapts what it takes from the nearest light theme
+        // it extends.
+        let light_from = chain
+            .first()
+            .filter(|t| t.dark)
+            .and_then(|_| chain.iter().position(|t| !t.dark));
+        let adapt = match light_from {
+            Some(k) => {
+                let bg = |c: &[&Theme]| Resolver::plain(c, &game, palette).role(Role::Background);
+                Some((k, Mirror::new(bg(&chain[k..])?, bg(&chain)?)))
+            }
+            None => None,
+        };
         let resolver = Resolver {
             chain: &chain,
-            game: game_key(game_name),
+            game: game.clone(),
             palette,
+            adapt,
         };
-        let mut done = vec![None; palette.len()];
+        let light = adapt.map(|(k, _)| Resolver::plain(&chain[k..], &game, palette));
+        let mut state = State {
+            done: vec![None; palette.len()],
+            light_done: vec![None; palette.len()],
+        };
         (0..palette.len())
-            .map(|i| resolver.entry(i, &mut done, &mut Vec::new()))
+            .map(|i| resolver.entry(i, light.as_ref(), &mut state, &mut Vec::new()))
             .collect()
     }
+
+    /// Whether the theme (or one it extends) is dark.
+    #[must_use]
+    pub fn is_dark(&self, name: &str) -> bool {
+        self.get(name).is_some_and(|t| t.dark)
+    }
+
+    /// The names of all themes, sorted without case.
+    #[must_use]
+    pub fn names(&self) -> Vec<String> {
+        self.themes.values().map(|t| t.name.clone()).collect()
+    }
+
+    /// The colours for the app around the puzzles: the theme's `[ui]`
+    /// values, or else its roles (panel from background, text from ink,
+    /// accent from selected), looked up through `extends`.
+    ///
+    /// # Errors
+    /// An unknown theme, a cycle of `extends`, or a missing role.
+    pub fn ui_colours(&self, theme: &str) -> Result<UiColours, ResolveError> {
+        let chain = self.chain(theme)?;
+        let resolver = Resolver::plain(&chain, "", &[]);
+        let ui = |key: &str, role: Role| -> Result<Rgb, ResolveError> {
+            match chain.iter().find_map(|t| t.ui.get(key).copied()) {
+                Some(c) => Ok(c),
+                None => resolver.role(role),
+            }
+        };
+        Ok(UiColours {
+            dark: chain[0].dark,
+            panel: ui("panel", Role::Background)?,
+            text: ui("text", Role::Ink)?,
+            accent: ui("accent", Role::Selected)?,
+        })
+    }
+}
+
+/// The app's own colours in a theme (see [`ThemeSet::ui_colours`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UiColours {
+    /// Whether the theme is dark.
+    pub dark: bool,
+    /// Panels and windows.
+    pub panel: Rgb,
+    /// Text.
+    pub text: Rgb,
+    /// Selections and highlighted controls.
+    pub accent: Rgb,
+}
+
+/// Colours resolved so far, in the theme and in its light parent.
+struct State {
+    done: Vec<Option<Rgb>>,
+    light_done: Vec<Option<Rgb>>,
 }
 
 struct Resolver<'a> {
     chain: &'a [&'a Theme],
     game: String,
     palette: &'a [PaletteEntry],
+    /// For a dark theme: where its light parent starts in `chain`, and
+    /// the mirror between their backgrounds.
+    adapt: Option<(usize, Mirror)>,
 }
 
-impl Resolver<'_> {
+impl<'a> Resolver<'a> {
+    fn plain(chain: &'a [&'a Theme], game: &str, palette: &'a [PaletteEntry]) -> Self {
+        Self {
+            chain,
+            game: game.to_owned(),
+            palette,
+            adapt: None,
+        }
+    }
+
+    /// `c`, found at `index` in the chain, mirrored if it came from the
+    /// light parent of a dark theme.
+    fn adapted(&self, index: usize, c: Rgb) -> Rgb {
+        match self.adapt {
+            Some((k, mirror)) if index >= k => mirror.apply(c),
+            _ => c,
+        }
+    }
+
     fn name(&self) -> String {
         self.chain[0].name.clone()
     }
 
+    /// Entry `i`. `light` resolves in a dark theme's light parent.
     fn entry(
         &self,
         i: usize,
-        done: &mut [Option<Rgb>],
+        light: Option<&Resolver<'_>>,
+        state: &mut State,
         visiting: &mut Vec<usize>,
     ) -> Result<Rgb, ResolveError> {
-        if let Some(c) = done.get(i).copied().flatten() {
+        if let Some(c) = state.done.get(i).copied().flatten() {
             return Ok(c);
         }
         let entry = self.palette.get(i).ok_or(ResolveError::BadDerivation(i))?;
@@ -171,33 +275,57 @@ impl Resolver<'_> {
             .and_then(|g| g.overrides.get(&entry.key()));
         let colour = match (own, entry.spec) {
             (Some(&c), _) => c,
-            (None, ColourSpec::Role(role)) => self.role(role)?,
+            (None, ColourSpec::Role(role)) => {
+                let (index, c) = self.find_role(role)?;
+                self.adapted(index, c)
+            }
             (None, ColourSpec::Series(series, n)) => self.series(series, n)?,
-            (None, ColourSpec::Specific(key)) => self.specific(key)?,
+            (None, ColourSpec::Specific(key)) => {
+                let (index, c) = self.find_specific(key)?;
+                self.adapted(index, c)
+            }
             (None, ColourSpec::Derived { base, op }) => {
-                let base = self.entry(base.0, done, visiting)?;
-                match op {
-                    DeriveOp::Shade(f) => base.map(|c| c * f),
-                    DeriveOp::Mix { with, t } => mix(base, self.entry(with.0, done, visiting)?, t),
-                    DeriveOp::Highlight => bevel(base).highlight,
-                    DeriveOp::Lowlight => bevel(base).lowlight,
+                if let (Some((_, mirror)), Some(light)) = (self.adapt, light) {
+                    // As in the light parent, then mirrored.
+                    let mut light_state = State {
+                        done: std::mem::take(&mut state.light_done),
+                        light_done: Vec::new(),
+                    };
+                    let c = light.entry(i, None, &mut light_state, &mut Vec::new());
+                    state.light_done = light_state.done;
+                    mirror.apply(c?)
+                } else {
+                    let base = self.entry(base.0, light, state, visiting)?;
+                    match op {
+                        DeriveOp::Shade(f) => base.map(|c| c * f),
+                        DeriveOp::Mix { with, t } => {
+                            mix(base, self.entry(with.0, light, state, visiting)?, t)
+                        }
+                        DeriveOp::Highlight => bevel(base).highlight,
+                        DeriveOp::Lowlight => bevel(base).lowlight,
+                    }
                 }
             }
         };
 
         visiting.pop();
-        done[i] = Some(colour);
+        state.done[i] = Some(colour);
         Ok(colour)
     }
 
-    fn role(&self, role: Role) -> Result<Rgb, ResolveError> {
+    fn find_role(&self, role: Role) -> Result<(usize, Rgb), ResolveError> {
         self.chain
             .iter()
-            .find_map(|t| t.roles.get(role_key(role)).copied())
+            .enumerate()
+            .find_map(|(i, t)| t.roles.get(role_key(role)).map(|&c| (i, c)))
             .ok_or(ResolveError::MissingRole {
                 theme: self.name(),
                 role,
             })
+    }
+
+    fn role(&self, role: Role) -> Result<Rgb, ResolveError> {
+        self.find_role(role).map(|(_, c)| c)
     }
 
     fn series(&self, series: Series, n: u8) -> Result<Rgb, ResolveError> {
@@ -212,10 +340,11 @@ impl Resolver<'_> {
             })
     }
 
-    fn specific(&self, key: &str) -> Result<Rgb, ResolveError> {
+    fn find_specific(&self, key: &str) -> Result<(usize, Rgb), ResolveError> {
         self.chain
             .iter()
-            .find_map(|t| t.games.get(&self.game)?.specific.get(key).copied())
+            .enumerate()
+            .find_map(|(i, t)| Some((i, *t.games.get(&self.game)?.specific.get(key)?)))
             .ok_or_else(|| ResolveError::MissingSpecific {
                 theme: self.name(),
                 game: self.game.clone(),

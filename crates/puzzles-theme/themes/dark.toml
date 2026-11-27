@@ -1,0 +1,38 @@
+# Dark: the app's dark theme (themes decision in docs/porting-plan.md).
+# Every role and series is set here; game-specific and derived colours
+# come from Light, mirrored around the background in OKLab.
+name = "Dark"
+extends = "Light"
+dark = true
+
+[roles]
+background = "#1c1c1f"
+highlight = "#2c2c31"
+lowlight = "#111113"
+ink = "#e4e4e7"
+grid = "#7a7a85"
+cursor = "#60a5fa"
+error = "#f87171"
+flash = "#e4e4e7"
+clue = "#e4e4e7"
+user_entry = "#4ade80"
+pencil = "#a5b4fc"
+done = "#4ade80"
+hint = "#fbbf24"
+selected = "#1d4ed8"
+faint = "#71717a"
+filled = "#d4d4d8"
+
+[series]
+pieces = ["#ef6b6d", "#f2d058", "#6cbf61", "#6f9bd1", "#f59a45", "#b58bcb", "#b08b73", "#8ed3ec", "#b5e3ae", "#f7b5d2"]
+
+[ui]
+accent = "#60a5fa"
+
+# Flip: lights that are on stay light and lights that are off stay dark
+# (mirroring alone would swap them).
+[game.flip]
+right = "#d4d4d8"
+
+[game.flip.overrides]
+wrong = "#2a2a2e"

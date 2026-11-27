@@ -22,6 +22,8 @@ pub enum MenuAction {
     CopyGameId,
     /// Copy the random seed ID.
     CopySeed,
+    /// Open Settings (with the game's preferences).
+    Settings,
 }
 
 /// A toolbar menu button: an icon and a label.

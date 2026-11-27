@@ -5,4 +5,7 @@ pub mod command;
 pub mod layout;
 pub mod paths;
 pub mod session;
+pub mod settings;
+pub mod themes;
 pub mod user_presets;
+pub mod watch;

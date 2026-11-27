@@ -85,13 +85,17 @@ struct Scene {
 impl Scene {
     /// `game` is the name, as in save files ("Flip").
     fn new(game: &str, setup: impl FnOnce(&mut dyn Puzzle), scale: f64) -> Self {
+        Self::new_in("classic", game, setup, scale)
+    }
+
+    fn new_in(theme: &str, game: &str, setup: impl FnOnce(&mut dyn Puzzle), scale: f64) -> Self {
         let info = puzzles_games::find(game).expect("a game");
         let mut puzzle = info.new_midend(b"canvas", true, MidendOptions::default());
         setup(puzzle.as_mut());
         let (w, h) = puzzle.size(i32::MAX, i32::MAX, false, scale);
         let colours = ThemeSet::builtin()
-            .resolve("classic", puzzle.name(), puzzle.palette())
-            .expect("Classic covers every game");
+            .resolve(theme, puzzle.name(), puzzle.palette())
+            .expect("built-in themes cover every game");
         let mut canvas = Canvas::new(w as u32, h as u32, &colours).expect("a size");
         puzzle.redraw(&mut canvas);
         Self { puzzle, canvas }
@@ -109,13 +113,18 @@ impl Scene {
     }
 
     fn icon(game: &str, scale: f64) -> Self {
+        Self::icon_in("classic", game, scale)
+    }
+
+    fn icon_in(theme: &str, game: &str, scale: f64) -> Self {
         let path = format!(
             "{}/../../third_party/puzzles-c/icons/{}.sav",
             env!("CARGO_MANIFEST_DIR"),
             game.to_lowercase()
         );
         let save = std::fs::read(path).expect("upstream's icon save file");
-        Self::new(
+        Self::new_in(
+            theme,
             game,
             |p| p.deserialise(&mut &save[..]).expect("loads"),
             scale,
@@ -184,4 +193,16 @@ fn guess() {
     // Labels: text on every peg.
     scene.press(0, 0, Button::key('l'));
     check("guess-labels", &scene.canvas);
+}
+
+/// Every game in the app's own themes: upstream's icon positions, which
+/// show most of each game's colours.
+#[test]
+fn themes() {
+    for theme in ["light", "dark"] {
+        for game in ["Flip", "Fifteen", "Guess"] {
+            let scene = Scene::icon_in(theme, game, 1.0);
+            check(&format!("{}-{theme}", game.to_lowercase()), &scene.canvas);
+        }
+    }
 }

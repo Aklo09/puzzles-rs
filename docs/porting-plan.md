@@ -40,6 +40,7 @@ summarises them all.
 | — | Desktop shell | **Decided** 2026-11-27 | (a) The app opens on a library screen (each game's name, upstream's one-line `DESCRIPTION`, its `OBJECTIVE` as a tooltip; both in the registry's `GameInfo`); a toolbar button (Cmd/Ctrl+G) returns to it, and the puzzle gets the whole window. Rejected: a game list in a side panel (takes width, and the rules panel will sit on the other side). (b) Toolbar icons from `egui-phosphor` (MIT). Rejected: `egui_material_icons`; text buttons. Because `egui-phosphor` 0.14 targets egui 0.36, the app uses eframe/egui 0.36 until it catches up. (c) eframe's wgpu renderer (Metal, DirectX 12, Vulkan). Rejected: glow (OpenGL, deprecated on macOS). (d) New Game is split: `Midend::begin_new_game` draws the seed and returns a `Send` `NewGameJob` (nothing else changes), `NewGameJob::run` calls the ported generator, `finish_new_game` installs the result unless the job is stale (another mid-end's, or params, game ID, loading or a later New Game changed what New Game means). `new_game` is the three in a row, so the C parity tests are unaffected. With `MidendOptions::defer_new_game`, New Game keys return `KeyResult::NewGame` instead of generating, because only the mid-end knows whether `n` is the game's own key. The app starts a thread per New Game; Cancel drops the result, but the thread runs on (no cancel points in the generators), so a generation that never ends keeps a core busy until the app quits. Rejected: generating on the UI thread for now. Also, chosen for the UI: Classic's light egui style until themes (PR 5); a bottom status bar; shortcuts Cmd (macOS) or Ctrl + N new, R restart, Z undo, Shift+Z (and Ctrl+Y off macOS) redo, G games, Q quit; Alt/Option-click is a middle click, and Ctrl-click a right click on macOS; only the canvas area that changed is uploaded. (e) UI tests use `egui_kittest`: behaviour tests drive the real `PuzzlesApp` without a renderer, so they run in CI on every OS; a `screenshots` test renders the main screens with wgpu to `target/ui-screenshots/` for review (no pixel assertions; skipped without a GPU adapter). Toolbar buttons carry accessible names, which screen readers need too |
 | — | Dialogs and presets | **Decided** 2026-11-27 | (a) Two toolbar dropdowns: **Type** (built-in presets, then `presets.toml`'s, then `<GAME>_PRESETS`'s, submenus, the current one ticked, "Custom…", problems with the file listed at the bottom) and **Game** ("Enter game ID…", "Enter random seed…", "Copy game ID", "Copy random seed", "Preferences…"), drawn with egui. Rejected: a native menu bar (`muda`): a second UI system to keep in sync and harder to test; it may come later for macOS's standard Window and Edit menus only. (b) Dialogs are egui modals generated from `ConfigItem`s; the game's error shows inside and the dialog stays open; OK on Custom or an ID starts the new game; Enter confirms, Esc cancels; buttons bottom right in the OS's order. (c) Files live in the app's own folder, `directories`' config dir plus `puzzles-rs` (macOS `~/Library/Application Support/puzzles-rs/`, Linux `~/.config/puzzles-rs/`, Windows `%APPDATA%\puzzles-rs\`): `presets.toml` and `prefs/<game>.conf` in C's format and C's naming, written through a temporary file. Rejected: sharing C's GTK folder. (d) Settings holds each game's preferences for now; global settings join it with themes (PR 5) and `settings.toml` (PR 6). (e) `presets.toml` is re-read when the Type menu opens if its modification time changed (`Midend::set_extra_presets` rebuilds the menu; `check_params` reports bad entries with their line). Rejected for now: a `notify` watcher (themes need one, and may bring it) |
 | — | Custom dialog field order | **Decided** 2026-11-27 | Every Custom dialog lists Width before Height. In C only Mosaic lists Height first; its port swaps the two in `configure` and `custom_params`, and its parity test swaps C's items before comparing, with a comment. A UI difference only: game IDs, save files and generated puzzles are unaffected. Rejected: the front end reordering fields by their (English) labels, a heuristic that localisation would break |
+| — | Themes in the app | **Decided** 2026-11-27 | (a) **Light** is a new flat theme (near-white background, soft greys, bevels close to the background, muted accents); Classic stays C's exact look. Rejected: Light as another name for Classic. (b) A dark theme must define every role and series (lint test). Colours it doesn't define itself, a game's `Specific` values and `Derived` entries, are computed as in the nearest light theme it extends, then **mirrored around the background in OKLab**: lightness maps piecewise linearly through (0 → 1), (light background → dark background), (1 → 0), hue and chroma kept, clamped to sRGB. Series are never mirrored. Poor results get per-game overrides after reviewing the snapshots. Rejected: adapting only `Specific` values and deriving from the dark values directly (Flip's "wrong" tiles, background × 1/3, would be near-black on a dark background). (c) One **Settings…** dialog (gear icon in the toolbar and the library): Appearance (theme: Follow system, Classic, Light, Dark and user themes; under Follow system, the light and the dark theme to use) and, with a game open, that game's preferences; Game ▸ Preferences… opens it too. Rejected: a separate Appearance menu. (d) `settings.toml` starts now with the theme choices; PR 6 adds window state and the rest. Rejected: forgetting the choice until PR 6. (e) User themes are `themes/*.toml` in the app folder, watched with `notify` and applied live. Rejected: polling modification times every second (idle wake-ups). Also: egui's colours start from its light or dark style by the theme's `dark` flag, with panels from the theme's background, text from ink and selection from `selected`, and an optional `[ui]` section overriding them; the lint test requires 4.5:1 contrast against the background for ink, clue and user entry, 3:1 for error and grid |
 
 ---
 
@@ -1200,7 +1201,38 @@ at the top.
     the first field wasn't selected on opening (typing "0" over "8" gave
     80), and the button row took the dialog's whole height.
 
-  Next: `ui/themes`, Light, Dark and Follow-system themes.
+  - themes (`ui/themes`): Light (flat, extends Classic) and Dark
+    (extends Light) built in; dark themes mirror what they take from a
+    light one around the background in OKLab (`puzzles_theme::Mirror`,
+    on the `palette` crate), and Dark gives Flip its own colours so lit
+    lights stay light. A `[ui]` section (`panel`, `text`, `accent`) and
+    `ThemeSet::ui_colours` colour egui. The lint test checks every role
+    and Classic's series in every theme, every role set by dark themes
+    themselves, and WCAG contrast in Light and Dark. Canvas snapshots of
+    the three games in Light and Dark. In the app: one Settings dialog
+    (gear in the toolbar and the library; Appearance plus the open game's
+    preferences), Follow system by default (egui's `system_theme`),
+    `settings.toml` with the theme choices, and user themes in `themes/`
+    watched with `notify` and applied live. UI tests cover following the
+    system, choosing and saving a theme, and a user theme applied while
+    the app runs. The real-window check (macOS, computer use) confirmed
+    following the system's Dark mode, the Settings dialog, and choosing
+    Classic with a game preference (applied at once, saved), and a user
+    theme picked up from `themes/` and then edited while the app ran
+    (recoloured with no click). It found two bugs, fixed: controls hidden
+    against Classic's grey panel (control backgrounds now derive from the
+    panel and text colours), and a drop-down opened a second time in a
+    dialog drawn behind it. egui raises the layers that ask for it at the
+    end of a frame in their old order; a reopened dialog had moved above
+    the list's old layer, and with real input timing both asked in the
+    same frame, so the list was open but hidden. Visible foreground
+    layers are now sublayers of the open dialog
+    (`dialogs::keep_popups_above`), always drawn directly above it.
+    Logging in the real window found it; the harness doesn't reproduce
+    it.
+
+  Next: `ui/persistence`: window state in `settings.toml`, `.sav` save
+  and load, drag-and-drop, session restore.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

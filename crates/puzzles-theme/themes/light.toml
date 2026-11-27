@@ -1,0 +1,31 @@
+# Light: the app's flat light theme (themes decision in
+# docs/porting-plan.md). Near-white background, soft greys, bevels close to
+# the background, muted accents. Game-specific colours come from Classic.
+name = "Light"
+extends = "Classic"
+
+[roles]
+background = "#f4f4f5"
+highlight = "#fcfcfd"
+lowlight = "#d4d4d8"
+ink = "#18181b"
+grid = "#8a8a94"
+cursor = "#2563eb"
+error = "#dc2626"
+flash = "#ffffff"
+clue = "#18181b"
+user_entry = "#15803d"
+pencil = "#6366f1"
+done = "#16a34a"
+hint = "#d97706"
+selected = "#93c5fd"
+faint = "#a1a1aa"
+filled = "#27272a"
+
+[series]
+# Guess's pegs, in Classic's order: red, yellow, green, blue, orange,
+# purple, brown, light blue, light green, pink.
+pieces = ["#e15759", "#f2cf4a", "#59a14f", "#4e79a7", "#f28e2b", "#9d6bb5", "#9c755f", "#7ec8e3", "#a6dba0", "#f5a3c7"]
+
+[ui]
+accent = "#2563eb"
