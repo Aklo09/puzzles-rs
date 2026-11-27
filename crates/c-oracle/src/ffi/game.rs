@@ -23,6 +23,7 @@ struct SessionC {
 }
 
 unsafe extern "C" {
+    static fifteen: GameC;
     static flip: GameC;
     static nullgame: GameC;
 
@@ -127,6 +128,13 @@ impl std::fmt::Debug for GameC {
 }
 
 impl CGame {
+    /// `fifteen.c`.
+    #[must_use]
+    pub fn fifteen() -> Self {
+        // SAFETY: a constant struct defined by fifteen.c.
+        Self(unsafe { &fifteen })
+    }
+
     /// `flip.c`.
     #[must_use]
     pub fn flip() -> Self {

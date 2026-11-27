@@ -10,7 +10,8 @@ publish.workspace = true
 # One feature per game (D3), all puzzles on by default. `nullgame` is
 # C's template game: off by default and never in the registry.
 [features]
-default = ["flip"]
+default = ["fifteen", "flip"]
+fifteen = []
 flip = []
 nullgame = []
 
@@ -18,6 +19,7 @@ nullgame = []
 puzzles-core.workspace = true
 
 [dev-dependencies]
+insta.workspace = true
 proptest.workspace = true
 puzzles-theme.workspace = true
 

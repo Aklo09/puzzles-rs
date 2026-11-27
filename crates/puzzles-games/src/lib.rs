@@ -8,6 +8,8 @@
 //! `nullgame`, C's template for new games, sits behind a feature of its
 //! own that is off by default; it is never in the registry.
 
+#[cfg(feature = "fifteen")]
+pub mod fifteen;
 #[cfg(feature = "flip")]
 pub mod flip;
 #[cfg(feature = "nullgame")]
@@ -49,6 +51,8 @@ impl GameInfo {
 
 /// Every game built in, in C's order (alphabetical).
 pub const GAMES: &[GameInfo] = &[
+    #[cfg(feature = "fifteen")]
+    GameInfo::of::<fifteen::Fifteen>(),
     #[cfg(feature = "flip")]
     GameInfo::of::<flip::Flip>(),
 ];

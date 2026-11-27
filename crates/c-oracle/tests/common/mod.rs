@@ -235,8 +235,9 @@ impl<G: Game> Pair<G> {
         );
 
         // The mid-end's frames: the animation, then the flash, then still.
-        for k in 0..4_u8 {
-            let t = anim * f32::from(k) / 4.0;
+        // Frames through the animation, including near its end.
+        for fraction in [0.0_f32, 0.25, 0.5, 0.75, 0.9, 0.97, 0.999] {
+            let t = anim * fraction;
             if t < anim {
                 self.compare_redraw(true, 1, t, 0.0)?;
             }

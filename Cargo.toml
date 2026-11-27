@@ -22,6 +22,7 @@ cc = "1.11"
 clap = { version = "4.6", features = ["derive"] }
 csscolorparser = "0.9"
 hex = "0.4"
+insta = "1.49"
 itertools = "0.15"
 proptest = "1.12"
 rand = "0.10"

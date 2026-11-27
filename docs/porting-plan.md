@@ -1060,7 +1060,29 @@ at the top.
     copies; `generate` matches C's mid-end on every preset with random
     seeds. The games are found by name or key in any case.
 
-  Next: Fifteen.
+  - Fifteen (`fifteen`), and the golden corpus: `puzzles-games/tests/
+    corpus.rs` keeps an `insta` snapshot per game (every preset × seeds
+    0–9: description, aux, solver move, start as text), and
+    `c-oracle/tests/corpus_parity.rs` requires each snapshot to equal the
+    corpus built from C, so ordinary `cargo test` checks generation
+    against C on every OS. Fifteen matches C for presets, parameter
+    strings, descriptions (preset over 50 seeds, random sizes up to
+    9 × 9), mutated descriptions, random play scripts (clicks, arrows,
+    the `h` hint, Solve, raw moves) with every animation frame (the
+    shared driver now also draws frames near an animation's end) and the
+    status bar, hint-key solving, the "Sense of arrow keys" preference
+    through both mid-ends, palette parity (Classic gains a background
+    override: C's `game_mkhighlight` moves 0.9 to 0.8333), its corpus,
+    and upstream's `fifteen.sav` (66 positions) re-saved byte for byte
+    like `fuzzpuzz`. Where C asserts in the hint strategy (typed-in
+    unsolvable positions only), the hint does nothing.
+
+    Done bar so far: Flip and Fifteen pass everything that runs
+    headless (golden corpus, solver, `.sav` round trip, move codec,
+    draw traces, palette parity); canvas snapshots and manual play come
+    with the desktop app (Phase 3).
+
+  Next: Guess.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

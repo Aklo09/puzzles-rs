@@ -37,7 +37,7 @@ mod oracle {
     /// (and C file). They are built with `COMBINED`, as in C's
     /// all-in-one builds, so each defines `const game <name>` rather than
     /// `thegame`.
-    const C_GAMES: &[&str] = &["flip", "nullgame"];
+    const C_GAMES: &[&str] = &["fifteen", "flip", "nullgame"];
 
     pub fn build() {
         println!("cargo::rerun-if-env-changed=PUZZLES_C_SRC");

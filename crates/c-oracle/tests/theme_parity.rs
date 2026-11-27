@@ -31,6 +31,11 @@ const EPSILON: f32 = 1e-6;
 fn ported() -> Vec<(&'static str, &'static [PaletteEntry], CGame)> {
     vec![
         (
+            puzzles_games::fifteen::Fifteen::NAME,
+            puzzles_games::fifteen::Fifteen::PALETTE,
+            CGame::fifteen(),
+        ),
+        (
             puzzles_games::flip::Flip::NAME,
             puzzles_games::flip::Flip::PALETTE,
             CGame::flip(),

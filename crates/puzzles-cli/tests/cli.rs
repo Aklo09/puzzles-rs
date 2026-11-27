@@ -75,5 +75,6 @@ DESC    :25:d074191345d1644c17058,f80\nNSTATES :1:2\nSTATEPOS:1:2\nMOVE    :4:M1
 fn unknown_games_list_the_known_ones() {
     let o = cli(&["generate", "chess"], b"");
     assert!(!o.status.success());
-    assert!(String::from_utf8_lossy(&o.stderr).contains("games: Flip"));
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(err.contains("games: ") && err.contains("Flip"), "{err}");
 }

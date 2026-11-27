@@ -3,7 +3,7 @@
 //!
 //! * `roundtrip` against C's `fuzzpuzz` (load, size to `INT_MAX`,
 //!   redraw, save): the same bytes or the same error, for upstream's
-//!   `flip.sav`, files saved by C after random play, and damaged copies.
+//!   `fifteen.sav` and `flip.sav`, files saved by C after random play, and damaged copies.
 //! * `generate` against C's mid-end generating from the same seed IDs,
 //!   non-interactively as C's batch mode does.
 
@@ -16,11 +16,12 @@ use puzzles_games::flip::Flip;
 
 /// C's `fuzzpuzz` on `data`, through the oracle's C mid-end.
 fn c_fuzzpuzz(data: &[u8]) -> Result<Vec<u8>, String> {
-    let name = c_identify_game(data)?;
-    if name != "Flip" {
-        return Err("Game not recognised".into());
-    }
-    let mut c = CMidend::new(CGame::flip(), b"roundtrip", true);
+    let game = match c_identify_game(data)?.as_str() {
+        "Fifteen" => CGame::fifteen(),
+        "Flip" => CGame::flip(),
+        _ => return Err("Game not recognised".into()),
+    };
+    let mut c = CMidend::new(game, b"roundtrip", true);
     c.deserialise(data)?;
     c.size(i32::MAX, i32::MAX, false, 1.0);
     c.redraw();
@@ -31,14 +32,19 @@ fn rust(data: &[u8]) -> Result<Vec<u8>, String> {
     puzzles_cli::roundtrip(data).map_err(|e| e.0)
 }
 
+/// Upstream's save files (its icon sources) for the ported games: the
+/// same output as `fuzzpuzz`, which is the file itself (line ends aside).
 #[test]
-fn upstream_flip_save_round_trips_like_fuzzpuzz() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../third_party/puzzles-c/icons/flip.sav");
-    let data = std::fs::read(path).expect("flip.sav");
-    let out = rust(&data);
-    assert_eq!(out, c_fuzzpuzz(&data));
-    assert!(out.is_ok());
+fn upstream_saves_round_trip_like_fuzzpuzz() {
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../third_party/puzzles-c/icons");
+    for name in ["fifteen.sav", "flip.sav"] {
+        let data = std::fs::read(dir.join(name)).expect("an icon save file");
+        let out = rust(&data);
+        assert_eq!(out, c_fuzzpuzz(&data), "{name}");
+        let lf = String::from_utf8(data).unwrap().replace("\r\n", "\n");
+        assert_eq!(out.map(|o| String::from_utf8(o).unwrap()), Ok(lf), "{name}");
+    }
 }
 
 /// A save file C writes after some play.
