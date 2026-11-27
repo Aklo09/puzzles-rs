@@ -25,6 +25,8 @@ pub fn shortcuts(mac: bool) -> Vec<(KeyboardShortcut, Command)> {
         (cmd(Key::N), Command::NewGame),
         (cmd(Key::R), Command::Restart),
         (cmd(Key::G), Command::Games),
+        (cmd(Key::S), Command::Save),
+        (cmd(Key::O), Command::Load),
         (cmd(Key::Q), Command::Quit),
     ]);
     list

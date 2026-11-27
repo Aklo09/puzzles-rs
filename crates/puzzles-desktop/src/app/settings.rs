@@ -1,6 +1,6 @@
 //! The app's settings, `settings.toml` in the app's folder (themes
-//! decision in `docs/porting-plan.md`). For now the theme choices; PR 6
-//! adds window state and the rest. Unknown keys are ignored and missing
+//! decision in `docs/porting-plan.md`): the theme choices and the game
+//! last open. The window's place is eframe's, in `app.ron`. Unknown keys are ignored and missing
 //! ones take their defaults, so older and newer files both load.
 
 use std::path::Path;
@@ -21,6 +21,9 @@ pub struct Settings {
     pub light_theme: String,
     /// The theme for a dark system appearance.
     pub dark_theme: String,
+    /// The game open when the app last ran, reopened at launch; `None`
+    /// for the game list.
+    pub last_game: Option<String>,
 }
 
 impl Default for Settings {
@@ -30,6 +33,7 @@ impl Default for Settings {
             theme: "Light".to_owned(),
             light_theme: "Light".to_owned(),
             dark_theme: "Dark".to_owned(),
+            last_game: None,
         }
     }
 }
@@ -97,10 +101,14 @@ mod tests {
         let mine = Settings {
             follow_system: false,
             theme: "Classic".to_owned(),
+            last_game: Some("Flip".to_owned()),
             ..Settings::default()
         };
         mine.save(&path).unwrap();
         assert_eq!(Settings::load(&path), (mine, None));
+        let library = Settings::default();
+        library.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).0.last_game, None);
 
         // A later version's keys are ignored, missing ones defaulted.
         std::fs::write(

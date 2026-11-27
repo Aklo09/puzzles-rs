@@ -9,6 +9,7 @@ use puzzles_core::midend::ConfigKind;
 use puzzles_core::preset::{PresetEntry, PresetMenu};
 
 use super::fonts;
+use crate::app::command::Command;
 use crate::app::session::Session;
 
 /// What a menu asked for.
@@ -24,6 +25,8 @@ pub enum MenuAction {
     CopySeed,
     /// Open Settings (with the game's preferences).
     Settings,
+    /// Run an app command (Save, Load).
+    Command(Command),
 }
 
 /// A toolbar menu button: an icon and a label.
@@ -115,11 +118,20 @@ pub fn type_menu(
     action
 }
 
-/// The Game menu.
-pub fn game_menu(ui: &mut egui::Ui, session: &Session) -> Option<MenuAction> {
+/// The Game menu. `mac` picks how shortcuts are written.
+pub fn game_menu(ui: &mut egui::Ui, session: &Session, mac: bool) -> Option<MenuAction> {
     let mut action = None;
     ui.menu_button(menu_title(icon::HASH, "Game"), |ui| {
         ui.set_min_width(180.0);
+        for command in [Command::Save, Command::Load] {
+            let button = egui::Button::new(command.label())
+                .shortcut_text(command.shortcut_text(mac).unwrap_or_default());
+            if ui.add_enabled(session.can(command), button).clicked() {
+                action = Some(MenuAction::Command(command));
+                ui.close();
+            }
+        }
+        ui.separator();
         let mut item = |ui: &mut egui::Ui, enabled: bool, label: &str, what: MenuAction| {
             if ui.add_enabled(enabled, egui::Button::new(label)).clicked() {
                 action = Some(what);
