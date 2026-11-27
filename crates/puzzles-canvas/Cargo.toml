@@ -1,0 +1,17 @@
+[package]
+name = "puzzles-canvas"
+description = "tiny-skia drawing canvas for the puzzle collection: shapes, text, blitters, PNG"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ab_glyph.workspace = true
+puzzles-core.workspace = true
+puzzles-theme.workspace = true
+tiny-skia.workspace = true
+
+[lints]
+workspace = true

@@ -36,6 +36,7 @@ summarises them all.
 | — | User presets | **Decided** 2026-11-27 | (a) User-defined presets live in their own hand-edited `presets.toml` in the per-OS config directory (next to user themes), which the app only reads, with hot reload. Rejected: a section of `settings.toml` (the app rewrites that file, losing comments and layout). (b) Entries are arrays of tables keyed by game (`[[flip]] title = "Big"`, `params = "6x6c"`); `params` is a C parameter string, parsed by the game's `decode_params` + `validate_params`; an entry with `presets = [...]` instead of `params` is a submenu; invalid entries are skipped with a warning, never a panic. Rejected: named per-game fields (`w = 6`, `type = "crosses"`), which need key names C doesn't have and break when a game's options change. (c) Menu order: built-in presets, then the file, then `<GAME>_PRESETS` (C appends extras after the built-ins); the env var keeps working for the CLI and C-style setups. (d) `MidendOptions::extra_presets` becomes a structured list (title, params string or submenu) instead of a C-syntax string; `from_lookup` parses `<GAME>_PRESETS` into it with C's parsing, so titles may contain `:` and TOML submenus need no `#` encoding. (e) Phase 3 reads the file only; "save current parameters as a preset" (editing the file with `toml_edit`, keeping comments) comes later with the Settings work |
 | — | Canvas crate | **Decided** 2026-11-27 | The tiny-skia `DrawingApi` canvas (shapes, clipping, blitters, text, PNG output) is its own crate, `puzzles-canvas`, depending only on `puzzles-core` and `puzzles-theme`, with no egui. `puzzles-games` tests use it for canvas snapshots, `puzzles-cli` gains a `render` command (a game ID or save file to PNG, in a chosen theme and size; flags settled in the canvas PR), and later thumbnails and a web build reuse it. Rejected: `puzzles-desktop/src/canvas/` with the app as lib + bin (snapshot tests stuck in the desktop crate, and rendering from the CLI would pull in eframe) |
 | — | Phase 3 order | **Decided** 2026-11-27 | One PR each, a playable game first: (1) `engine/extra-presets`: structured `MidendOptions::extra_presets`; (2) `ui/canvas`: `puzzles-canvas` (tiny-skia shapes, clip, blitters, `ab_glyph` text with bundled Inter + JetBrains Mono), Classic snapshots of Flip, Fifteen and Guess, `puzzles-cli render`; (3) `ui/shell`: eframe window with a playable game (game list, fluid resize + HiDPI, per-OS input table, timer and animation, status bar, toolbar + shortcuts, cancellable generation thread); (4) `ui/dialogs`: presets menu with `presets.toml`, custom-params/game-ID/seed dialogs from `ConfigItem`s, copy/paste IDs, settings with per-game prefs; (5) `ui/themes`: Light, Dark, Follow-system, egui `Visuals` from the theme, user themes + hot reload, theme lint, snapshots in every theme; (6) `ui/persistence`: `settings.toml`, `.sav` save/load, drag-and-drop, session restore, window state; (7) `ui/fullscreen`: full-screen, immersive mode, zoom and pan. Then manual play on two OSes. Rejected: themes before dialogs (a theme can't be judged without a playable game); one Phase 3 PR |
+| — | Canvas details | **Decided** 2026-11-27 | The canvas draws for looks and simple code, not to copy a C front end (only draw traces are compared with C; pixels are compared with our own snapshots). (a) Text: bold Inter / JetBrains Mono, `size` = em height in pixels; `ALIGN_VCENTRE` puts the middle of the capital height at `y`, so all strings share a baseline; `ALIGN_VNORMAL` is the true baseline; advance widths plus kerning, no shaping; start and baseline on whole pixels. Rejected: GTK's centring of each string's ink box (text bobs between tiles). (b) Shapes: rectangles without anti-aliasing; one-pixel lines through pixel centres with square caps (both ends included); polygons, circles and thick lines (round caps) anti-aliased; rectangular clip; blitters copy pixels, off-canvas areas load as nothing. (c) Snapshots: PNGs in `puzzles-games/tests/snapshots/canvas/`, read and written with tiny-skia's PNG support; a pixel passes within ±2/255 per channel (anti-aliasing differs slightly between CPU architectures); `UPDATE_SNAPSHOTS=1` rewrites them, a failure writes `*.new.png`. Rejected: exact comparison (fails across architectures for no visible reason); `image` + `image-compare` (similarity scores aren't needed for a per-pixel check). (d) `Blitter` carries a liveness token (`Blitter::watch`), so the canvas frees a dropped blitter's pixels at the next `start_draw` |
 
 ---
 
@@ -720,7 +721,6 @@ generator would change every puzzle. So:
 | `cc` | `c-oracle`: compile the C sources for FFI differential tests |
 | `proptest` | property tests (core data structures, move codecs) |
 | `insta` | snapshot tests (descriptions, solver output, draw traces after acceptance) |
-| `image` (+ `image-compare` or similar) | tolerant PNG comparison for canvas snapshots |
 | `criterion` or `divan` | benchmarks (generation time per preset, replaces `benchmark.sh` timings) |
 | `cargo-fuzz` + `arbitrary` | fuzzing save files and move strings (Linux/macOS CI) |
 | `cargo-packager` (tool) | installers per OS (Phase 8) |
@@ -1128,8 +1128,19 @@ at the top.
     kept as in C). `parse_env_presets` is C's `<GAME>_PRESETS` parsing,
     which `from_lookup` uses; front ends put their presets file's
     entries before it. Titles may now contain `:`.
+  - `puzzles-canvas`: tiny-skia drawing of every `DrawingApi` call
+    (canvas details decision), text with the bundled Inter Bold and
+    JetBrains Mono NL Bold (`assets/fonts/`, OFL), blitters freed once
+    the game drops them, dirty-area tracking for the screen upload, and
+    `text_fallback` by font coverage. tiny-skia 0.12 blurs a path's
+    implicit closing edge by a quarter pixel, so polygons draw it
+    explicitly. `puzzles-cli render` writes a new game or a save file's
+    position as PNG (`--tilesize`, `--size WxH`, `--scale`, `--theme`).
+    Canvas snapshots of Flip, Fifteen and Guess in Classic (start
+    positions, moves, upstream icons at 1× and 2×, a dragged peg over a
+    blitter, peg labels).
 
-  Next: `puzzles-canvas` and `puzzles-cli render`.
+  Next: `ui/shell`, the eframe window with a playable game.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

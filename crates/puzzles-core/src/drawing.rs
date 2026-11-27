@@ -17,6 +17,7 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Weak};
 
 /// A palette index (C's colour `int`): an entry of the game's palette.
 pub type ColourIdx = usize;
@@ -86,13 +87,42 @@ impl Align {
 /// `blitter`), for example the background under a dragged piece.
 ///
 /// A plain handle: creating one needs no drawing. The front end keys its
-/// pixel storage by [`id`](Self::id) and allocates it on the first
-/// [`DrawingApi::blitter_save`].
-#[derive(Debug, PartialEq, Eq, Hash)]
+/// pixel storage by [`id`](Self::id), allocates it on the first
+/// [`DrawingApi::blitter_save`], and can free it once
+/// [`watch`](Self::watch) says the handle is gone (C's `blitter_free`).
+#[derive(Debug)]
 pub struct Blitter {
     id: u64,
     w: i32,
     h: i32,
+    alive: Arc<()>,
+}
+
+impl PartialEq for Blitter {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Blitter {}
+
+impl std::hash::Hash for Blitter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+/// Tells a front end whether a [`Blitter`] still exists, so it can free
+/// the pixels it keeps for one after the game drops it.
+#[derive(Clone, Debug)]
+pub struct BlitterWatch(Weak<()>);
+
+impl BlitterWatch {
+    /// True while the blitter exists.
+    #[must_use]
+    pub fn is_alive(&self) -> bool {
+        self.0.strong_count() > 0
+    }
 }
 
 impl Blitter {
@@ -106,7 +136,14 @@ impl Blitter {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             w,
             h,
+            alive: Arc::new(()),
         }
+    }
+
+    /// A watch that reports when this blitter is dropped.
+    #[must_use]
+    pub fn watch(&self) -> BlitterWatch {
+        BlitterWatch(Arc::downgrade(&self.alive))
     }
 
     /// The unique id.
@@ -747,6 +784,18 @@ mod tests {
         let mut rec = RecordingDrawing::default();
         draw(&mut Drawing::new(&mut rec));
         rec.to_string()
+    }
+
+    #[test]
+    fn a_blitter_watch_sees_the_drop() {
+        let a = Blitter::new(4, 4);
+        let b = Blitter::new(4, 4);
+        assert_ne!(a, b);
+        let watch = a.watch();
+        assert!(watch.is_alive());
+        drop(a);
+        assert!(!watch.is_alive());
+        assert!(b.watch().is_alive());
     }
 
     // The expected traces below are C's: the oracle test

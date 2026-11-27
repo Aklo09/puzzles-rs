@@ -12,10 +12,12 @@ publish = false
 [workspace.dependencies]
 # Internal and external crates are added here when a crate first uses them
 # (dependency policy, docs/porting-plan.md §5); Cargo warns on unused entries.
+puzzles-canvas = { path = "crates/puzzles-canvas" }
 puzzles-cli = { path = "crates/puzzles-cli" }
 puzzles-core = { path = "crates/puzzles-core" }
 puzzles-games = { path = "crates/puzzles-games", default-features = false }
 puzzles-theme = { path = "crates/puzzles-theme" }
+ab_glyph = "0.2"
 anyhow = "1.0"
 bitflags = "2.13"
 cc = "1.11"
@@ -30,6 +32,7 @@ serde = { version = "1.0", features = ["derive"] }
 sha1_smol = "1.0"
 sorted-vec = "0.8"
 thiserror = "2.0"
+tiny-skia = "0.12"
 toml = "1.2"
 
 [workspace.lints.rust]
