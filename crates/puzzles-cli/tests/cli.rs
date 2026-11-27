@@ -78,3 +78,44 @@ fn unknown_games_list_the_known_ones() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(err.contains("games: ") && err.contains("Flip"), "{err}");
 }
+
+#[test]
+fn render_writes_png() {
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    let o = cli(
+        &["render", "flip", "3x3c#42", "--tilesize", "20", "-o", "-"],
+        b"",
+    );
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(o.stdout.starts_with(PNG));
+
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("render");
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("flip-icon.png");
+    let sav = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../third_party/puzzles-c/icons/flip.sav"
+    );
+    let o = cli(
+        &[
+            "render",
+            "--load",
+            sav,
+            "--size",
+            "96x96",
+            "-o",
+            out.to_str().unwrap(),
+        ],
+        b"",
+    );
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert!(std::fs::read(&out).unwrap().starts_with(PNG));
+
+    let o = cli(&["render", "flip", "--load", sav], b"");
+    assert!(!o.status.success(), "a game and a save file conflict");
+    let o = cli(&["render", "flip", "--size", "12by3"], b"");
+    assert!(!o.status.success());
+    let o = cli(&["render", "flip", "--theme", "nope", "-o", "-"], b"");
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("nope"));
+}

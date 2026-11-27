@@ -1,7 +1,8 @@
 //! Command-line tools for the puzzle collection.
 //!
 //! Replaces the C project's batch modes: `generate` (game IDs),
-//! `solve`, and `roundtrip` (C's `fuzzpuzz`). Grading, the C standalone
+//! `solve`, and `roundtrip` (C's `fuzzpuzz`); `render` draws a position
+//! as a PNG. Grading, the C standalone
 //! solvers' output and benchmarks come in Phase 6.
 
 use std::io::{self, BufRead, Read, Write};
@@ -47,6 +48,42 @@ enum Command {
         /// The save file; stdin if none.
         file: Option<PathBuf>,
     },
+    /// Draw a new game, or a save file's position, as a PNG.
+    Render {
+        /// The game.
+        #[arg(required_unless_present = "load", conflicts_with = "load")]
+        game: Option<String>,
+        /// Parameters, a seed ID or a descriptive ID; default: a random
+        /// game with the default parameters.
+        id: Option<String>,
+        /// Draw the current position of this save file instead.
+        #[arg(long, value_name = "FILE.sav")]
+        load: Option<PathBuf>,
+        /// Where to write the PNG ("-" for stdout); default: <game>.png.
+        #[arg(short, value_name = "FILE")]
+        o: Option<PathBuf>,
+        /// The tile size; default: the game's (or <GAME>_TILESIZE).
+        #[arg(long, conflicts_with = "size")]
+        tilesize: Option<i32>,
+        /// Fit into this many pixels, as large as fits.
+        #[arg(long, value_name = "WxH", value_parser = parse_size)]
+        size: Option<(i32, i32)>,
+        /// The device pixel ratio.
+        #[arg(long, default_value_t = 1.0)]
+        scale: f64,
+        /// The theme.
+        #[arg(long, default_value = "classic")]
+        theme: String,
+    },
+}
+
+/// Parses `WxH`.
+fn parse_size(text: &str) -> Result<(i32, i32), String> {
+    let (w, h) = text
+        .split_once(['x', 'X'])
+        .ok_or_else(|| format!("{text:?} isn't WxH"))?;
+    let number = |s: &str| s.trim().parse::<i32>().map_err(|e| format!("{s:?}: {e}"));
+    Ok((number(w)?, number(h)?))
 }
 
 fn run(cli: Cli) -> anyhow::Result<bool> {
@@ -92,6 +129,56 @@ fn run(cli: Cli) -> anyhow::Result<bool> {
                 buf
             };
             out.write_all(&puzzles_cli::roundtrip(&input)?)?;
+            Ok(true)
+        }
+        Command::Render {
+            game,
+            id,
+            load,
+            o,
+            tilesize,
+            size,
+            scale,
+            theme,
+        } => {
+            let options = puzzles_cli::RenderOptions {
+                tilesize,
+                fit: size,
+                scale,
+                theme,
+            };
+            let seed: [u8; 16] = rand::random();
+            let (png, name) = if let Some(path) = &load {
+                let input =
+                    std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+                let png = puzzles_cli::render(puzzles_cli::RenderSource::Save(&input), &options)?;
+                let name = path
+                    .file_stem()
+                    .map_or_else(|| "puzzle".to_owned(), |s| s.to_string_lossy().into_owned());
+                (png, name)
+            } else {
+                let game = puzzles_cli::find_game(game.as_deref().unwrap_or_default())?;
+                let source = puzzles_cli::RenderSource::Game {
+                    game,
+                    id: id.as_deref(),
+                    seed: &seed,
+                };
+                let name: String = game
+                    .name
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .collect::<String>()
+                    .to_lowercase();
+                (puzzles_cli::render(source, &options)?, name)
+            };
+            match o {
+                Some(path) if path.as_os_str() == "-" => out.write_all(&png)?,
+                path => {
+                    let path = path.unwrap_or_else(|| PathBuf::from(format!("{name}.png")));
+                    std::fs::write(&path, &png)
+                        .with_context(|| format!("writing {}", path.display()))?;
+                }
+            }
             Ok(true)
         }
     }

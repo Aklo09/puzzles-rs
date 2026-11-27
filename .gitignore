@@ -1,2 +1,5 @@
 /target
 skills-lock.json
+
+# Canvas snapshots a failing test wrote for review.
+*.new.png

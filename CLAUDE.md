@@ -57,6 +57,7 @@ Never copy the C code into the repo.
 cargo xtask ci              # fmt, clippy -D warnings, all tests incl. C oracle (same as CI)
 cargo xtask ci --no-oracle  # same, without the C reference tests
 cargo insta test --review   # when snapshots change
+UPDATE_SNAPSHOTS=1 cargo test -p puzzles-games --test canvas   # accept new canvas PNGs (review them)
 ```
 CI (GitHub Actions) runs `cargo xtask ci` on pull requests, on Ubuntu and
 Windows, and skips docs-only changes. macOS runs on demand only:

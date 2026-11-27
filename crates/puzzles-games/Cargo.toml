@@ -21,6 +21,7 @@ puzzles-core.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+puzzles-canvas.workspace = true
 proptest.workspace = true
 puzzles-theme.workspace = true
 
