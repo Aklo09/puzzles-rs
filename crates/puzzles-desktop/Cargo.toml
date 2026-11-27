@@ -12,6 +12,7 @@ name = "puzzles"
 path = "src/main.rs"
 
 [dependencies]
+directories.workspace = true
 eframe.workspace = true
 egui-phosphor.workspace = true
 puzzles-canvas.workspace = true
@@ -19,6 +20,8 @@ puzzles-core.workspace = true
 puzzles-games = { workspace = true, default-features = true }
 puzzles-theme.workspace = true
 rand.workspace = true
+serde.workspace = true
+toml.workspace = true
 
 [dev-dependencies]
 egui_kittest.workspace = true

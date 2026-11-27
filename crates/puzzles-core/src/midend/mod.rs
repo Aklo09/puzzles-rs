@@ -1454,6 +1454,25 @@ impl<G: Game> Midend<G> {
         &self.presets.as_ref().expect("built above").menu
     }
 
+    /// Replaces the presets listed after the game's own (see
+    /// [`MidendOptions::extra_presets`]), such as after the user edited
+    /// their presets file. Preset ids may change.
+    pub fn set_extra_presets(&mut self, extra: PresetMenu<String>) {
+        self.options.extra_presets = extra;
+        self.presets = None;
+    }
+
+    /// Checks a parameter string as the presets menu would take it:
+    /// decoded over the game's defaults, then validated in full.
+    ///
+    /// # Errors
+    /// The game's message.
+    pub fn check_params(text: &str) -> Result<(), GameError> {
+        let mut params = G::default_params();
+        G::decode_params(&mut params, text);
+        G::validate_params(&params, true)
+    }
+
     /// The parameters of a preset, by id.
     #[must_use]
     pub fn preset_params(&self, id: usize) -> Option<&G::Params> {

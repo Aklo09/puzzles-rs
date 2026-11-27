@@ -14,15 +14,33 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 use super::{PuzzlesApp, Screen};
+use puzzles_core::config::ConfigItem;
+use puzzles_core::midend::ConfigKind;
+
 use crate::app::command::Command;
+use crate::app::paths::AppDirs;
 use crate::app::session::Session;
 
-/// The app in a 720 × 640 window. Only screenshots need a renderer, so
-/// behaviour tests also run on machines without a GPU (Linux CI).
+/// A fresh folder for one test's files, never the user's own.
+fn test_dirs(name: &str) -> AppDirs {
+    let dir = std::env::temp_dir().join(format!("puzzles-ui-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    AppDirs::at(dir)
+}
+
+/// The app in a 720 × 640 window, keeping its files in `dirs`. Only
+/// screenshots need a renderer, so behaviour tests also run on machines
+/// without a GPU.
+fn app_with(dirs: AppDirs) -> Harness<'static, PuzzlesApp> {
+    Harness::builder()
+        .with_size(egui::vec2(720.0, 640.0))
+        .build_eframe(move |cc| PuzzlesApp::with_dirs(cc, Some(dirs)))
+}
+
 fn app() -> Harness<'static, PuzzlesApp> {
     Harness::builder()
         .with_size(egui::vec2(720.0, 640.0))
-        .build_eframe(|cc| PuzzlesApp::new(cc))
+        .build_eframe(|cc| PuzzlesApp::with_dirs(cc, None))
 }
 
 /// The app with a wgpu renderer, or `None` (with a note) where wgpu
@@ -44,7 +62,7 @@ fn rendering_app() -> Option<Harness<'static, PuzzlesApp>> {
         Harness::builder()
             .with_size(egui::vec2(720.0, 640.0))
             .wgpu()
-            .build_eframe(|cc| PuzzlesApp::new(cc)),
+            .build_eframe(|cc| PuzzlesApp::with_dirs(cc, None)),
     )
 }
 
@@ -307,4 +325,251 @@ fn screenshots() {
     h.step();
     h.run_steps(2);
     save(&mut h, "guess-hint");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.step();
+    open(&mut h, "Flip");
+    open_menu(&mut h, "Type");
+    save(&mut h, "menu-type");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    open_menu(&mut h, "Game");
+    save(&mut h, "menu-game");
+    click_label(&mut h, "Enter game ID");
+    h.run();
+    save(&mut h, "dialog-game-id");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    open_menu(&mut h, "Type");
+    click_label(&mut h, "Custom…");
+    set_field(&mut h, "Width", "0");
+    click_label(&mut h, "OK");
+    h.run();
+    save(&mut h, "dialog-custom-error");
+}
+
+// ---------------------------------------------------------------------
+// Menus and dialogs
+
+/// Opens a toolbar menu (its label is its icon, a space and its name).
+fn open_menu(h: &mut Harness<'_, PuzzlesApp>, name: &str) {
+    h.get_by_label_contains(&format!(" {name}")).click();
+    h.run_steps(2);
+}
+
+fn click_label(h: &mut Harness<'_, PuzzlesApp>, label: &str) {
+    h.get_by_label_contains(label).click();
+    h.run_steps(2);
+}
+
+/// Replaces a dialog text field's contents, the way a user would:
+/// click it, select all, type.
+fn set_field(h: &mut Harness<'_, PuzzlesApp>, label: &str, text: &str) {
+    // Let the dialog settle first: it re-centres a frame after it grows
+    // (say, when an error appears), and the field moves with it.
+    h.run();
+    // Press and release in separate frames, as a real click arrives.
+    let pos = h
+        .get_by_role_and_label(Role::TextInput, label)
+        .rect()
+        .center();
+    for pressed in [true, false] {
+        h.event(Event::PointerMoved(pos));
+        h.event(Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(1);
+    }
+    assert!(
+        h.get_by_role_and_label(Role::TextInput, label).is_focused(),
+        "{label} focused"
+    );
+    h.key_press_modifiers(Modifiers::COMMAND, Key::A);
+    h.event(Event::Text(text.to_owned()));
+    h.run_steps(1);
+    assert_eq!(
+        h.get_by_role_and_label(Role::TextInput, label)
+            .value()
+            .as_deref(),
+        Some(text)
+    );
+}
+
+fn dialog_open(h: &Harness<'_, PuzzlesApp>) -> bool {
+    h.state().dialog.is_some()
+}
+
+#[test]
+fn presets_from_the_type_menu_start_new_games() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    open_menu(&mut h, "Type");
+    click_label(&mut h, "3x3 Random");
+    wait_for_game(&mut h);
+    assert!(session(&h).game_id().unwrap().starts_with("3x3:"));
+    assert_eq!(session(&h).current_preset(), Some(3), "ticked in the menu");
+}
+
+#[test]
+fn the_presets_file_is_read_when_the_menu_opens() {
+    let dirs = test_dirs("presets");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    std::fs::create_dir_all(dirs.presets().parent().unwrap()).unwrap();
+    std::fs::write(
+        dirs.presets(),
+        "[[flip]]\ntitle = \"Mine: 7x3\"\nparams = \"7x3c\"\n\n[[flip]]\ntitle = \"Bad\"\nparams = \"0x0\"\n",
+    )
+    .unwrap();
+    open_menu(&mut h, "Type");
+    h.get_by_label_contains("presets.toml line 5: \"Bad\"");
+    click_label(&mut h, "Mine: 7x3");
+    wait_for_game(&mut h);
+    assert!(session(&h).game_id().unwrap().starts_with("7x3:"));
+}
+
+#[test]
+fn custom_parameters_show_the_games_error_and_stay_open() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    open_menu(&mut h, "Type");
+    click_label(&mut h, "Custom…");
+    assert!(dialog_open(&h));
+    set_field(&mut h, "Width", "0");
+    click_label(&mut h, "OK");
+    assert!(dialog_open(&h), "rejected");
+    h.get_by_label_contains("must both be greater than zero");
+
+    set_field(&mut h, "Width", "4");
+    h.key_press(Key::Enter);
+    h.run_steps(2);
+    assert!(!dialog_open(&h), "Enter applies: {:?}", h.state().dialog);
+    wait_for_game(&mut h);
+    assert!(session(&h).game_id().unwrap().starts_with("4x5:"));
+}
+
+/// Found in the real window: typing "0" into a fresh dialog made the
+/// width 80, as the caret sat after the old value.
+#[test]
+fn typing_into_a_fresh_dialog_replaces_the_first_field() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    open_menu(&mut h, "Type");
+    click_label(&mut h, "Custom…");
+    h.event(Event::Text("3".to_owned()));
+    h.run_steps(1);
+    assert_eq!(
+        h.get_by_role_and_label(Role::TextInput, "Width")
+            .value()
+            .as_deref(),
+        Some("3")
+    );
+}
+
+#[test]
+fn game_ids_can_be_entered_and_copied() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    open_menu(&mut h, "Game");
+    click_label(&mut h, "Enter game ID");
+    set_field(&mut h, "Game ID", "3x3:d074191345d1644c17058,f80");
+    click_label(&mut h, "OK");
+    wait_for_game(&mut h);
+    assert_eq!(
+        session(&h).game_id().as_deref(),
+        Some("3x3:d074191345d1644c17058,f80")
+    );
+
+    open_menu(&mut h, "Game");
+    h.get_by_label("Copy game ID").click();
+    h.step();
+    let copied = h.output().platform_output.commands.iter().any(
+        |c| matches!(c, egui::OutputCommand::CopyText(t) if t == "3x3:d074191345d1644c17058,f80"),
+    );
+    assert!(copied, "copied to the clipboard");
+    h.run_steps(1);
+    assert_eq!(session(&h).status_line(), "Game ID copied.");
+
+    // Esc cancels a dialog without changing anything.
+    open_menu(&mut h, "Game");
+    click_label(&mut h, "Enter random seed");
+    assert!(dialog_open(&h));
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(!dialog_open(&h));
+}
+
+#[test]
+fn preferences_are_saved_in_cs_format() {
+    let dirs = test_dirs("prefs");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Fifteen");
+    open_menu(&mut h, "Game");
+    click_label(&mut h, "Preferences");
+    h.get_by_role(Role::ComboBox).click();
+    h.run_steps(2);
+    h.get_by_label("Move the gap").click();
+    h.run_steps(1);
+    click_label(&mut h, "OK");
+    assert!(!dialog_open(&h));
+    let saved = std::fs::read_to_string(dirs.prefs("Fifteen")).expect("saved");
+    assert!(saved.contains("arrow-semantics"), "{saved}");
+    assert!(saved.contains("gap"), "{saved}");
+
+    // A new session of the game loads them.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.step();
+    open(&mut h, "Fifteen");
+    let prefs = session(&h)
+        .config(puzzles_core::midend::ConfigKind::Prefs)
+        .unwrap();
+    assert!(matches!(
+        prefs.items[1].value,
+        puzzles_core::config::ConfigValue::Choices { selected: 1, .. }
+    ));
+    let _ = std::fs::remove_dir_all(dirs.presets().parent().unwrap());
+}
+
+/// Found by a flaky run: egui moved keyboard focus off the puzzle on an
+/// arrow key, so the next arrow was lost. On this board the first two
+/// arrows do nothing, and the third must still arrive.
+#[test]
+fn arrows_keep_working_after_one_that_does_nothing() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Fifteen");
+    let Screen::Game { session: s, .. } = &mut h.state_mut().screen else {
+        panic!("a game")
+    };
+    let id = ConfigItem::string("Game ID", "4x4:8,3,13,11,15,4,2,14,12,10,5,7,1,9,6,0");
+    s.apply_config(ConfigKind::Desc, &[id]).expect("a valid ID");
+    wait_for_game(&mut h);
+    for key in [Key::ArrowLeft, Key::ArrowUp] {
+        h.key_press(key);
+        h.step();
+    }
+    assert!(!session(&h).can(Command::Undo), "the gap is in the corner");
+    h.key_press(Key::ArrowRight);
+    h.step();
+    assert!(
+        session(&h).can(Command::Undo),
+        "the third arrow moved a tile"
+    );
+    // Also after clicking a toolbar button.
+    h.get_by_label("Undo").click();
+    h.run_steps(2);
+    h.key_press(Key::ArrowRight);
+    h.step();
+    assert!(
+        session(&h).can(Command::Undo),
+        "arrows work after a toolbar click"
+    );
 }

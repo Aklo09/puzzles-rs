@@ -3,4 +3,6 @@
 
 pub mod command;
 pub mod layout;
+pub mod paths;
 pub mod session;
+pub mod user_presets;

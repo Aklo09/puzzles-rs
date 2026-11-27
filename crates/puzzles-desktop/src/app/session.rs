@@ -7,18 +7,23 @@
 //! points), so a generation that never ends keeps running until the app
 //! quits.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Instant;
 
 use puzzles_canvas::Canvas;
 use puzzles_core::button::{Button, ButtonKind, UiAction};
+use puzzles_core::config::ConfigItem;
 use puzzles_core::erased::{Capabilities, Puzzle};
-use puzzles_core::midend::{GeneratedGame, KeyResult, MidendOptions};
+use puzzles_core::midend::{Config, ConfigKind, GeneratedGame, KeyResult, MidendOptions};
+use puzzles_core::preset::PresetMenu;
 use puzzles_games::GameInfo;
 use puzzles_theme::{Rgb, ThemeSet};
 
 use super::command::Command;
+use super::paths::{AppDirs, write_atomically};
+use super::user_presets::{PresetsFile, game_key};
 
 /// Wakes the UI when a generation finishes (from the worker thread).
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -59,6 +64,12 @@ pub struct Session {
     last_tick: Option<Instant>,
     message: Option<String>,
     waker: Waker,
+    /// Presets from `<GAME>_PRESETS`, listed after the file's.
+    env_presets: PresetMenu<String>,
+    /// Problems with the presets file, for the presets menu.
+    preset_errors: Vec<String>,
+    /// Where this game's preferences are saved, if anywhere.
+    prefs_path: Option<PathBuf>,
 }
 
 impl Session {
@@ -72,11 +83,21 @@ impl Session {
         themes: &ThemeSet,
         theme: &str,
         waker: Waker,
+        dirs: Option<&AppDirs>,
     ) -> Result<Self, String> {
         let mut options = MidendOptions::from_lookup(info.name, |name| std::env::var(name).ok());
         options.defer_new_game = true;
+        let env_presets = options.extra_presets.clone();
         let seed: [u8; 16] = rand::random();
-        let puzzle = info.new_midend(&seed, true, options);
+        let mut puzzle = info.new_midend(&seed, true, options);
+        let prefs_path = dirs.map(|d| d.prefs(info.name));
+        let mut message = None;
+        if let Some(path) = &prefs_path
+            && let Ok(data) = std::fs::read(path)
+            && let Err(e) = puzzle.load_prefs(&mut data.as_slice())
+        {
+            message = Some(format!("{}: {e}", path.display()));
+        }
         let colours = themes
             .resolve(theme, info.name, puzzle.palette())
             .map_err(|e| format!("{}: {e}", info.name))?;
@@ -90,8 +111,11 @@ impl Session {
             has_game: false,
             layout: None,
             last_tick: None,
-            message: None,
+            message,
             waker,
+            env_presets,
+            preset_errors: Vec::new(),
+            prefs_path,
         };
         session.start_new_game();
         Ok(session)
@@ -324,10 +348,108 @@ impl Session {
         }
     }
 
-    /// The current game ID, for tests.
-    #[cfg(test)]
+    // --------------------------------------------------------------
+    // Presets
+
+    /// Takes the presets file's entries for this game (after the game's
+    /// own, before `<GAME>_PRESETS`) and remembers its problems.
+    pub fn use_presets_file(&mut self, file: &PresetsFile) {
+        let known = |key: &str| puzzles_games::GAMES.iter().any(|g| game_key(g.name) == key);
+        let puzzle = &self.puzzle;
+        let (mut menu, errors) = file.presets().menu_for(self.info.name, known, |p| {
+            puzzle.check_params(p).map_err(|e| e.to_string())
+        });
+        menu.entries
+            .extend(self.env_presets.entries.iter().cloned());
+        self.puzzle.set_extra_presets(menu);
+        self.preset_errors = errors;
+    }
+
+    /// The presets menu, each preset carrying its id.
+    pub fn presets(&mut self) -> &PresetMenu<usize> {
+        self.puzzle.presets()
+    }
+
+    /// The preset matching the current parameters.
+    #[must_use]
+    pub fn current_preset(&self) -> Option<usize> {
+        self.puzzle.which_preset()
+    }
+
+    /// Problems with the presets file.
+    #[must_use]
+    pub fn preset_errors(&self) -> &[String] {
+        &self.preset_errors
+    }
+
+    /// Starts a new game with a preset's parameters.
+    pub fn choose_preset(&mut self, id: usize) {
+        if !self.is_generating() && self.puzzle.set_preset(id) {
+            self.start_new_game();
+        }
+    }
+
+    // --------------------------------------------------------------
+    // Dialogs
+
+    /// What a dialog shows, or `None` if it doesn't apply now (no
+    /// Custom dialog, or no game for an ID yet).
+    #[must_use]
+    pub fn config(&self, kind: ConfigKind) -> Option<Config> {
+        self.puzzle.get_config(kind)
+    }
+
+    /// Applies a dialog's fields: new parameters or a game ID start a
+    /// new game; preferences are saved.
+    ///
+    /// # Errors
+    /// The game's message, for the dialog to show; nothing changes then.
+    pub fn apply_config(&mut self, kind: ConfigKind, items: &[ConfigItem]) -> Result<(), String> {
+        if self.is_generating() {
+            return Err("A new game is still being generated.".to_owned());
+        }
+        self.puzzle
+            .set_config(kind, items)
+            .map_err(|e| e.to_string())?;
+        match kind {
+            ConfigKind::Settings | ConfigKind::Seed | ConfigKind::Desc => self.start_new_game(),
+            ConfigKind::Prefs => {
+                self.puzzle.force_redraw();
+                self.save_prefs();
+            }
+        }
+        Ok(())
+    }
+
+    fn save_prefs(&mut self) {
+        let Some(path) = &self.prefs_path else {
+            return;
+        };
+        let mut data = Vec::new();
+        let saved = self
+            .puzzle
+            .save_prefs(&mut data)
+            .and_then(|()| write_atomically(path, &data));
+        if let Err(e) = saved {
+            self.message = Some(format!("Saving preferences to {}: {e}", path.display()));
+        }
+    }
+
+    /// The current game's descriptive ID, for copying.
+    #[must_use]
     pub fn game_id(&self) -> Option<String> {
         self.puzzle.get_game_id()
+    }
+
+    /// The current game's random seed ID, if it came from one.
+    #[must_use]
+    pub fn random_seed(&self) -> Option<String> {
+        self.puzzle.get_random_seed()
+    }
+
+    /// Shows a line in the status bar until the next command.
+    pub fn notify(&mut self, message: impl Into<String>) {
+        self.message = Some(message.into());
     }
 
     /// The window title.
@@ -350,7 +472,14 @@ mod tests {
     }
 
     fn open() -> Session {
-        Session::new(flip(), &ThemeSet::builtin(), "classic", Arc::new(|| {})).unwrap()
+        Session::new(
+            flip(),
+            &ThemeSet::builtin(),
+            "classic",
+            Arc::new(|| {}),
+            None,
+        )
+        .unwrap()
     }
 
     /// Waits for the generation in progress, as the UI does when woken.

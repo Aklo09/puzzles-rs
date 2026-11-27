@@ -377,3 +377,20 @@ const _: fn() = || {
     send::<puzzles_core::midend::NewGameJob>();
     send::<puzzles_core::midend::GeneratedGame>();
 };
+
+#[test]
+fn extra_presets_can_be_replaced_and_checked() {
+    let mut me = flip();
+    assert_eq!(me.presets().entries.len(), 6);
+    let mut extra = PresetMenu::new();
+    extra.add_preset("Big", "7x7c".to_owned());
+    me.set_extra_presets(extra);
+    assert_eq!(me.presets().entries.len(), 7, "rebuilt with the new extra");
+    me.set_extra_presets(PresetMenu::new());
+    assert_eq!(me.presets().entries.len(), 6);
+    assert!(Midend::<Flip>::check_params("7x7c").is_ok());
+    assert_eq!(
+        Midend::<Flip>::check_params("0x0").unwrap_err().message(),
+        "Width and height must both be greater than zero"
+    );
+}
