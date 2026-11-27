@@ -22,6 +22,7 @@ cc = { workspace = true, optional = true }
 [dev-dependencies]
 itertools.workspace = true
 proptest.workspace = true
+puzzles-cli.workspace = true
 puzzles-core.workspace = true
 puzzles-games = { workspace = true, features = ["flip", "nullgame"] }
 puzzles-theme.workspace = true

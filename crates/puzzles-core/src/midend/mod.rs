@@ -1125,6 +1125,22 @@ impl<G: Game> Midend<G> {
         Ok(())
     }
 
+    /// The text of the step that led to the current position, as in save
+    /// files (C's `movestr`): the move, the solver's move, or the
+    /// description a restart went back to; `None` at the start.
+    #[doc(alias = "movestr")]
+    #[must_use]
+    pub fn current_move(&self) -> Option<String> {
+        let entry = self.states.get(self.statepos.checked_sub(1)?)?;
+        let mut text = String::new();
+        match &entry.step {
+            Step::NewGame => return None,
+            Step::Move(mv) | Step::Solve(mv) => G::encode_move(mv, &mut text),
+            Step::Restart(desc) => text.clone_from(desc),
+        }
+        Some(text)
+    }
+
     /// Whether the game is over (C's `midend_status`); a mid-end without
     /// a game counts as solved.
     #[must_use]

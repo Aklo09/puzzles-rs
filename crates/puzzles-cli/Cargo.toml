@@ -7,5 +7,16 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "puzzles-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+puzzles-core.workspace = true
+puzzles-games = { workspace = true, default-features = true }
+rand.workspace = true
+
 [lints]
 workspace = true
