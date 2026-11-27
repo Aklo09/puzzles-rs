@@ -31,6 +31,7 @@ summarises them all.
 | — | `Game` trait details | **Decided** 2026-11-26 | (a) `new_game` and `execute_move` take `&mut GameCtx`, which collects mid-end requests (Mines' `supersede_desc(desc, privdesc)`) for the mid-end to apply after the call; other games ignore it. Rejected: a take-once poll hook on the state (needs a `RefCell` in Mines' layout); a wrapper return type. (b) Capabilities are `bool` consts defaulting to false (`CAN_CONFIGURE`, `CAN_SOLVE`, `CAN_FORMAT_AS_TEXT_EVER`, `WANTS_STATUSBAR`, `IS_TIMED`; `CAN_PRINT`/`CAN_PRINT_IN_COLOUR` join with printing in Phase 9); C's `flags` int is `const FLAGS: GameFlags` (bitflags); a generic conformance test checks each const against its method. Rejected: one bitflags for everything. (c) nullgame lives in `puzzles-games` behind a `nullgame` feature, not in `default` or the registry. Rejected: a `puzzles_core::testing` module. (d) `decode_move` returns `Result<Move, MoveParseError>`, a unit error: a rejected move is an error for developers (tests, logs, tools), while users still see the mid-end's generic C message. Rejected: `Option` (same information, but not typed as an error); an error with a reason per game (messages C never had, which users wouldn't see) |
 | — | Mid-end details | **Decided** 2026-11-26 | (a) `new_ui(Option<&State>)`: `None` is C's `new_ui(NULL)`, a UI used only to read and write preferences before or without a game; games handle it as C does. Rejected: a separate `Prefs` type (splits every C `game_ui`, and must mirror preference fields the UI changes at run time). (b) The mid-end never reads the environment: it takes `MidendOptions` (default params, extra presets, preferred tile size), which the front end or CLI fills from C's `<GAME>_DEFAULT`, `<GAME>_PRESETS` and `<GAME>_TILESIZE` with C's parsing, or later from settings; `<GAME>_COLOUR_n` is dropped (themes, D7). Rejected: `getenv` in the mid-end; dropping the hooks. (c) Undoing a New Game keeps the previous game as a typed snapshot (one struct: states, params, descriptions, aux, UI, timer) swapped back after C's same-params check, instead of C's serialise/deserialise round trip; the UI after the undo is the live one (UI may drift). Rejected: serialising like C |
 | — | Classic theme details | **Decided** 2026-11-27 | (a) Classic reproduces C with the default background 0.9 grey (GTK 3, headless and web front ends; the oracle uses it too); Highlight/Lowlight are C's `game_mkhighlight` of it. Rejected: 0.8 (macOS), the system colour (Windows). (b) A theme's per-game overrides of palette entries (`[game.<name>.overrides]`, keyed by entry name) apply in that theme only and are not inherited by themes that extend it, so Classic's light-theme quirks don't leak into Dark; `Specific` keys (`[game.<name>]`) are inherited. Rejected: inheriting overrides. Consequence of "within float epsilon": colours are `f32` triples as in C, theme files accept a float triple besides CSS syntax, and Classic is written as float triples |
+| — | CLI commands | **Decided** 2026-11-27 | (a) `generate <game> [ID] [-n N]` prints N descriptive game IDs, one per line, from a non-interactive mid-end: random seeds without an ID or with bare parameters; exactly one game for a seed or descriptive ID. Rejected: GTK's batch mode (seed numbering `abc`, `abc-1`, …, `--test-solve`, `--time-generation`, `--save`). (b) `solve <game> [ID…]` (IDs from the arguments, or stdin lines) prints the solved position as `text_format` when the game has one, otherwise the solve move string; `--move` always prints the move. The C standalone solvers' output (`-g`, `-v`) joins in Phase 6. Rejected: always the move string. (c) `roundtrip [FILE]` is C's `fuzzpuzz`: identify the game, load, size to `INT_MAX`, redraw with a null drawing, write the save file to stdout; errors to stderr, exit 1 |
 | — | Threading | **Decided** 2026-11-26 | The desktop app runs puzzle generation on one worker thread ("Generating…" overlay, cancel discards the result; the ported generators are unchanged); moves, undo, solving, redraw and animation stay on the UI thread. Game states stay single-threaded with `Rc` for shared parts; only `Params: Send + 'static` is required, since `new_desc` takes params + seed and returns a string. The web build can generate in place. Rejected: `Arc` + `Send + Sync` states for off-thread solving (solving is fast, mostly from `aux`; revisit per game if one proves slow) |
 
 ---
@@ -373,6 +374,8 @@ Implementations:
 | `<GAME>_DEFAULT`, `<GAME>_PRESETS`, `<GAME>_TILESIZE` getenv | `MidendOptions` (`from_lookup(name, lookup)` applies C's names and parsing); `STYLUS_BASED` is `MidendOptions::stylus_based` |
 | `activate_timer`/`deactivate_timer`, `midend_redraw` calls, id-change callback | `wants_timer()`, `is_dirty()` + `redraw(&mut dyn DrawingApi)`, `take_id_changed()` |
 | `printf("%g")`, `atof` (the save file's `TIME`) | `parse::format_g`, `parse::atof` |
+| `fuzzpuzz` | `puzzles-cli roundtrip` (`puzzles_cli::roundtrip`) |
+| GTK batch mode (`--generate N ID`) | `puzzles-cli generate <game> [ID] [-n N]` (CLI decision (a): no seed numbering, timing or save options) |
 | `game_colours()` | `const PALETTE: &[PaletteEntry]` (`palette!`: entry name + `ColourSpec`), resolved by `puzzles_theme::ThemeSet::resolve`; C's values live in the generated `themes/classic.toml` |
 | `frontend_default_colour` | Classic's `background`, 0.9 grey (Classic decision (a)); the oracle's shim returns the same |
 | `game_mkhighlight` / `game_mkhighlight_specific`, `colour_mix` | `puzzles_theme::bevel` (base, highlight, lowlight; bit-exact) and `mix`; `DeriveOp::Highlight`/`Lowlight`/`Mix` |
@@ -1049,7 +1052,15 @@ at the top.
     itself to about 0.833, so bevelled games will get a background
     override.
 
-  Next: the CLI (`generate`, `solve`, `roundtrip`).
+  - the CLI (`puzzles-cli`: `generate`, `solve`, `roundtrip`; the
+    commands are library functions the binary calls), and
+    `Midend::current_move` (C's `movestr` of the current position).
+    `roundtrip` matches C's `fuzzpuzz` byte for byte, error for error,
+    on upstream's `flip.sav`, saves after random play and damaged
+    copies; `generate` matches C's mid-end on every preset with random
+    seeds. The games are found by name or key in any case.
+
+  Next: Fifteen.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

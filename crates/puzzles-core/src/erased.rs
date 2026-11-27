@@ -87,6 +87,8 @@ pub trait Puzzle {
     fn solve(&mut self) -> Result<(), GameError>;
     /// [`Midend::status`].
     fn status(&self) -> GameStatus;
+    /// [`Midend::current_move`].
+    fn current_move(&self) -> Option<String>;
     /// [`Midend::can_undo`].
     fn can_undo(&self) -> bool;
     /// [`Midend::can_redo`].
@@ -239,6 +241,10 @@ impl<G: Game> Puzzle for Midend<G> {
 
     fn status(&self) -> GameStatus {
         Midend::status(self)
+    }
+
+    fn current_move(&self) -> Option<String> {
+        Midend::current_move(self)
     }
 
     fn can_undo(&self) -> bool {

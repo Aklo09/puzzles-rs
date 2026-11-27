@@ -74,6 +74,10 @@ fn solving_marks_the_save_file() {
     me.solve().expect("Flip solves");
     let text = save(&me);
     assert!(text.contains("\nSOLVE   :26:S"), "{text}");
+    let mv = me.current_move().expect("the solve");
+    assert!(text.contains(&format!("SOLVE   :26:{mv}\n")));
+    me.process_key(0, 0, Button::key('u'));
+    assert_eq!(me.current_move(), None, "back at the start");
     assert_eq!(me.status(), GameStatus::Ongoing, "hints only");
 }
 
