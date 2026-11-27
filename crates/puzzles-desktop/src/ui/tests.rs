@@ -43,6 +43,16 @@ fn app() -> Harness<'static, PuzzlesApp> {
         .build_eframe(|cc| PuzzlesApp::with_dirs(cc, None))
 }
 
+/// One wgpu device at a time in this test binary. Tests run on parallel
+/// threads, and Mesa's lavapipe (the software Vulkan driver Linux CI uses)
+/// crashed the process (SIGSEGV) with rendering tests running at once.
+/// Hold the guard, declared before the harness, for the whole test.
+fn gpu_lock() -> std::sync::MutexGuard<'static, ()> {
+    static GPU: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GPU.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// The app with a wgpu renderer, or `None` (with a note) where wgpu
 /// finds no adapter, such as CI machines without a GPU or Mesa's
 /// lavapipe. The harness itself would panic there.
@@ -208,6 +218,7 @@ fn solve_from_the_toolbar() {
 /// pixels on screen are the canvas's: nothing a drag drew is left behind.
 #[test]
 fn dragging_leaves_nothing_behind_on_screen() {
+    let _gpu = gpu_lock();
     let Some(mut h) = rendering_app() else {
         return;
     };
@@ -300,6 +311,7 @@ fn dragging_leaves_nothing_behind_on_screen() {
 #[test]
 fn screenshots() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-screenshots");
+    let _gpu = gpu_lock();
     let Some(mut h) = rendering_app() else {
         return;
     };
