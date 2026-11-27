@@ -29,6 +29,7 @@ egui_kittest = { version = "0.36", features = ["eframe", "wgpu"] }
 hex = "0.4"
 insta = "1.49"
 itertools = "0.15"
+pollster = "0.4"
 proptest = "1.12"
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }

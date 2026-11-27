@@ -25,6 +25,29 @@ fn app() -> Harness<'static, PuzzlesApp> {
         .build_eframe(|cc| PuzzlesApp::new(cc))
 }
 
+/// The app with a wgpu renderer, or `None` (with a note) where wgpu
+/// finds no adapter, such as CI machines without a GPU or Mesa's
+/// lavapipe. The harness itself would panic there.
+fn rendering_app() -> Option<Harness<'static, PuzzlesApp>> {
+    let setup = egui_kittest::wgpu::default_wgpu_setup();
+    let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &setup else {
+        unreachable!("kittest creates its own instance")
+    };
+    let instance = pollster::block_on(setup.new_instance());
+    let adapters =
+        pollster::block_on(instance.enumerate_adapters(create.instance_descriptor.backends));
+    if adapters.is_empty() {
+        eprintln!("skipped: no wgpu adapter (install a GPU driver or Mesa's lavapipe)");
+        return None;
+    }
+    Some(
+        Harness::builder()
+            .with_size(egui::vec2(720.0, 640.0))
+            .wgpu()
+            .build_eframe(|cc| PuzzlesApp::new(cc)),
+    )
+}
+
 fn session<'h>(h: &'h Harness<'_, PuzzlesApp>) -> &'h Session {
     match &h.state().screen {
         Screen::Game { session, .. } => session,
@@ -167,16 +190,11 @@ fn solve_from_the_toolbar() {
 /// pixels on screen are the canvas's: nothing a drag drew is left behind.
 #[test]
 fn dragging_leaves_nothing_behind_on_screen() {
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(720.0, 640.0))
-        .wgpu()
-        .build_eframe(|cc| PuzzlesApp::new(cc));
+    let Some(mut h) = rendering_app() else {
+        return;
+    };
     h.run_steps(2);
     open(&mut h, "Guess");
-    if h.render().is_err() {
-        eprintln!("skipped: no GPU adapter");
-        return;
-    }
     let rect = puzzle_rect(&h);
     let at = |fx: f32, fy: f32| {
         Pos2::new(
@@ -264,30 +282,20 @@ fn dragging_leaves_nothing_behind_on_screen() {
 #[test]
 fn screenshots() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-screenshots");
-    let mut h = Harness::builder()
-        .with_size(egui::vec2(720.0, 640.0))
-        .wgpu()
-        .build_eframe(|cc| PuzzlesApp::new(cc));
+    let Some(mut h) = rendering_app() else {
+        return;
+    };
     h.run_steps(2);
     let save = |h: &mut Harness<'_, PuzzlesApp>, name: &str| {
-        let image = match h.render() {
-            Ok(image) => image,
-            Err(e) => {
-                eprintln!("screenshots skipped: {e}");
-                return false;
-            }
-        };
+        let image = h.render().expect("rendered");
         let size = puzzles_canvas::tiny_skia::IntSize::from_wh(image.width(), image.height())
             .expect("a frame");
         let pixmap = puzzles_canvas::tiny_skia::Pixmap::from_vec(image.into_raw(), size)
             .expect("RGBA pixels");
         std::fs::create_dir_all(&dir).unwrap();
         pixmap.save_png(dir.join(format!("{name}.png"))).unwrap();
-        true
     };
-    if !save(&mut h, "library") {
-        return;
-    }
+    save(&mut h, "library");
     for game in ["Flip", "Fifteen", "Guess"] {
         open(&mut h, game);
         save(&mut h, &game.to_lowercase());
