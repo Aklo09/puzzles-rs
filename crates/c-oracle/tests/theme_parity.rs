@@ -20,7 +20,7 @@ use c_oracle::{CGame, c_mkhighlight};
 use proptest::prelude::*;
 use puzzles_core::game::Game;
 use puzzles_core::palette::{ColourSpec, PaletteEntry};
-use puzzles_theme::{Rgb, Theme, ThemeSet, bevel, game_key};
+use puzzles_theme::{Rgb, Theme, ThemeSet, bevel, game_key, series_key};
 
 /// Largest component difference between Classic and C: C's `bg / 3`
 /// against the port's `bg * (1/3)` differ in the last bit.
@@ -39,6 +39,11 @@ fn ported() -> Vec<(&'static str, &'static [PaletteEntry], CGame)> {
             puzzles_games::flip::Flip::NAME,
             puzzles_games::flip::Flip::PALETTE,
             CGame::flip(),
+        ),
+        (
+            puzzles_games::guess::Guess::NAME,
+            puzzles_games::guess::Guess::PALETTE,
+            CGame::guess(),
         ),
         (
             puzzles_games::nullgame::NullGame::NAME,
@@ -101,8 +106,26 @@ fn generate() -> Theme {
         let key = game_key(name);
         let mut colours = puzzles_theme::GameColours::default();
         for (entry, &colour) in palette.iter().zip(&c) {
-            if let ColourSpec::Specific(k) = entry.spec {
-                colours.specific.insert(k.to_owned(), colour);
+            match entry.spec {
+                ColourSpec::Specific(k) => {
+                    colours.specific.insert(k.to_owned(), colour);
+                }
+                // The first game using a series colour supplies it; later
+                // games that differ get overrides.
+                ColourSpec::Series(series, n) => {
+                    let list = theme
+                        .series
+                        .entry(series_key(series).to_owned())
+                        .or_default();
+                    match usize::from(n).cmp(&list.len()) {
+                        std::cmp::Ordering::Equal => list.push(colour),
+                        std::cmp::Ordering::Less => {}
+                        std::cmp::Ordering::Greater => {
+                            panic!("{name}: series {series:?} skips colours")
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         theme.games.insert(key.clone(), colours);

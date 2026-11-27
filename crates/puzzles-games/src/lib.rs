@@ -12,6 +12,8 @@
 pub mod fifteen;
 #[cfg(feature = "flip")]
 pub mod flip;
+#[cfg(feature = "guess")]
+pub mod guess;
 #[cfg(feature = "nullgame")]
 pub mod nullgame;
 
@@ -55,6 +57,8 @@ pub const GAMES: &[GameInfo] = &[
     GameInfo::of::<fifteen::Fifteen>(),
     #[cfg(feature = "flip")]
     GameInfo::of::<flip::Flip>(),
+    #[cfg(feature = "guess")]
+    GameInfo::of::<guess::Guess>(),
 ];
 
 /// The game with this name (as in save files), if it is built in.

@@ -1,0 +1,104 @@
+---
+source: crates/puzzles-games/tests/corpus.rs
+expression: "corpus::<puzzles_games::guess::Guess>()"
+---
+c6p4g10Bm#0
+desc: 2bebff56
+aux: -
+solve: S
+text: -
+c6p4g10Bm#1
+desc: b2f69110
+aux: -
+solve: S
+text: -
+c6p4g10Bm#2
+desc: 8ea460c0
+aux: -
+solve: S
+text: -
+c6p4g10Bm#3
+desc: 41e96574
+aux: -
+solve: S
+text: -
+c6p4g10Bm#4
+desc: 5db138a7
+aux: -
+solve: S
+text: -
+c6p4g10Bm#5
+desc: 251dabb2
+aux: -
+solve: S
+text: -
+c6p4g10Bm#6
+desc: c3da3baa
+aux: -
+solve: S
+text: -
+c6p4g10Bm#7
+desc: cdc309ac
+aux: -
+solve: S
+text: -
+c6p4g10Bm#8
+desc: bf27f9a5
+aux: -
+solve: S
+text: -
+c6p4g10Bm#9
+desc: 49e97e53
+aux: -
+solve: S
+text: -
+c8p5g12Bm#0
+desc: eb712e93c8
+aux: -
+solve: S
+text: -
+c8p5g12Bm#1
+desc: b8c69877a9
+aux: -
+solve: S
+text: -
+c8p5g12Bm#2
+desc: 668b66be43
+aux: -
+solve: S
+text: -
+c8p5g12Bm#3
+desc: 043444067c
+aux: -
+solve: S
+text: -
+c8p5g12Bm#4
+desc: 75b09a195e
+aux: -
+solve: S
+text: -
+c8p5g12Bm#5
+desc: dc5286d0ec
+aux: -
+solve: S
+text: -
+c8p5g12Bm#6
+desc: 0bbce4c705
+aux: -
+solve: S
+text: -
+c8p5g12Bm#7
+desc: 896c30786f
+aux: -
+solve: S
+text: -
+c8p5g12Bm#8
+desc: 6a57424f94
+aux: -
+solve: S
+text: -
+c8p5g12Bm#9
+desc: bb7d15f319
+aux: -
+solve: S
+text: -

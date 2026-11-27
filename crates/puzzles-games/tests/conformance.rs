@@ -148,6 +148,12 @@ fn flip() {
     check::<puzzles_games::flip::Flip>();
 }
 
+#[cfg(feature = "guess")]
+#[test]
+fn guess() {
+    check::<puzzles_games::guess::Guess>();
+}
+
 #[cfg(feature = "nullgame")]
 #[test]
 fn nullgame() {
