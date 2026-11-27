@@ -276,6 +276,14 @@ fn is_markable(params: &Params, pegs: &PegRow) -> bool {
     nset >= required && (params.allow_multiple || count.iter().all(|&n| n <= 1))
 }
 
+/// Whether `execute_move` takes a guess of these colours: each one in
+/// range, blank only if blanks are allowed. Unlike [`is_markable`], it
+/// accepts repeats and an all-blank row, as C's `execute_move` does.
+fn pegs_in_range(params: &Params, pegs: &[i32]) -> bool {
+    let min = i32::from(!params.allow_blank);
+    pegs.iter().all(|&v| (min..=params.ncolours).contains(&v))
+}
+
 /// C's `mark_pegs`: marks `guess` against `solution`, counting colours
 /// 1 to `ncols`; returns how many are in the right place.
 fn mark_pegs(guess: &mut PegRow, solution: &PegRow, ncols: i32) -> usize {
@@ -738,9 +746,12 @@ impl Game for Guess {
         } else if button == Button::cursor(CursorKey::Select) {
             ui.display_cur = true;
             if ui.peg_cur == npegs {
-                // C submits even an incomplete guess here, which its
-                // mid-end then aborts on.
-                ret = if ui.markable {
+                // C submits whatever is there, markable or not. Rows
+                // its execute_move takes (repeats, all blank) are real
+                // moves; one it rejects (blank pegs where blanks aren't
+                // allowed) would abort its mid-end, so the port only
+                // shows the cursor then.
+                ret = if pegs_in_range(&from.params, &ui.curr_pegs.pegs) {
                     MoveResult::Move(guess_move(ui))
                 } else {
                     MoveResult::UiUpdate
@@ -797,8 +808,7 @@ impl Game for Guess {
                 if from.solved != GameStatus::Ongoing || pegs.len() != from.solution.pegs.len() {
                     return None;
                 }
-                let min = i32::from(!from.params.allow_blank);
-                if pegs.iter().any(|&v| v < min || v > from.params.ncolours) {
+                if !pegs_in_range(&from.params, pegs) {
                     return None;
                 }
                 let mut state = from.clone();
@@ -1453,6 +1463,33 @@ mod tests {
                 assert_eq!(state.solved, GameStatus::Won, "{id} seed {seed}");
             }
         }
+    }
+
+    #[test]
+    fn enter_submits_what_execute_move_takes() {
+        // As in C: with the cursor on the marking pegs, Enter submits
+        // repeats and all-blank rows (CI found a hint, a drag making a
+        // repeat, then Enter); only rows C's execute_move rejects stay.
+        let enter = |id: &str, pegs: &[i32]| {
+            let state = start(id, b"enter");
+            let mut ds = Guess::new_drawstate(&state);
+            Guess::set_size(&mut ds, &state.params, 22);
+            let mut ui = Guess::new_ui(Some(&state));
+            ui.curr_pegs.pegs = pegs.to_vec();
+            ui.markable = is_markable(&state.params, &ui.curr_pegs);
+            ui.peg_cur = state.params.npegs;
+            let button = Button::cursor(CursorKey::Select);
+            Guess::interpret_move(&state, &mut ui, &ds, 0, 0, button)
+        };
+        assert_eq!(
+            enter("c6p4g10BM", &[1, 1, 3, 4]),
+            MoveResult::Move(guess(&[1, 1, 3, 4]))
+        );
+        assert_eq!(
+            enter("c6p4g10bM", &[0, 0, 0, 0]),
+            MoveResult::Move(guess(&[0, 0, 0, 0]))
+        );
+        assert_eq!(enter("c6p4g10BM", &[1, 0, 3, 4]), MoveResult::UiUpdate);
     }
 
     #[test]
