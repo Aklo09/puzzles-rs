@@ -4,6 +4,7 @@
 pub mod command;
 pub mod layout;
 pub mod paths;
+pub mod save_file;
 pub mod session;
 pub mod settings;
 pub mod themes;

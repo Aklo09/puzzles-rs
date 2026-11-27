@@ -41,6 +41,7 @@ summarises them all.
 | — | Dialogs and presets | **Decided** 2026-11-27 | (a) Two toolbar dropdowns: **Type** (built-in presets, then `presets.toml`'s, then `<GAME>_PRESETS`'s, submenus, the current one ticked, "Custom…", problems with the file listed at the bottom) and **Game** ("Enter game ID…", "Enter random seed…", "Copy game ID", "Copy random seed", "Preferences…"), drawn with egui. Rejected: a native menu bar (`muda`): a second UI system to keep in sync and harder to test; it may come later for macOS's standard Window and Edit menus only. (b) Dialogs are egui modals generated from `ConfigItem`s; the game's error shows inside and the dialog stays open; OK on Custom or an ID starts the new game; Enter confirms, Esc cancels; buttons bottom right in the OS's order. (c) Files live in the app's own folder, `directories`' config dir plus `puzzles-rs` (macOS `~/Library/Application Support/puzzles-rs/`, Linux `~/.config/puzzles-rs/`, Windows `%APPDATA%\puzzles-rs\`): `presets.toml` and `prefs/<game>.conf` in C's format and C's naming, written through a temporary file. Rejected: sharing C's GTK folder. (d) Settings holds each game's preferences for now; global settings join it with themes (PR 5) and `settings.toml` (PR 6). (e) `presets.toml` is re-read when the Type menu opens if its modification time changed (`Midend::set_extra_presets` rebuilds the menu; `check_params` reports bad entries with their line). Rejected for now: a `notify` watcher (themes need one, and may bring it) |
 | — | Custom dialog field order | **Decided** 2026-11-27 | Every Custom dialog lists Width before Height. In C only Mosaic lists Height first; its port swaps the two in `configure` and `custom_params`, and its parity test swaps C's items before comparing, with a comment. A UI difference only: game IDs, save files and generated puzzles are unaffected. Rejected: the front end reordering fields by their (English) labels, a heuristic that localisation would break |
 | — | Themes in the app | **Decided** 2026-11-27 | (a) **Light** is a new flat theme (near-white background, soft greys, bevels close to the background, muted accents); Classic stays C's exact look. Rejected: Light as another name for Classic. (b) A dark theme must define every role and series (lint test). Colours it doesn't define itself, a game's `Specific` values and `Derived` entries, are computed as in the nearest light theme it extends, then **mirrored around the background in OKLab**: lightness maps piecewise linearly through (0 → 1), (light background → dark background), (1 → 0), hue and chroma kept, clamped to sRGB. Series are never mirrored. Poor results get per-game overrides after reviewing the snapshots. Rejected: adapting only `Specific` values and deriving from the dark values directly (Flip's "wrong" tiles, background × 1/3, would be near-black on a dark background). (c) One **Settings…** dialog (gear icon in the toolbar and the library): Appearance (theme: Follow system, Classic, Light, Dark and user themes; under Follow system, the light and the dark theme to use) and, with a game open, that game's preferences; Game ▸ Preferences… opens it too. Rejected: a separate Appearance menu. (d) `settings.toml` starts now with the theme choices; PR 6 adds window state and the rest. Rejected: forgetting the choice until PR 6. (e) User themes are `themes/*.toml` in the app folder, watched with `notify` and applied live. Rejected: polling modification times every second (idle wake-ups). Also: egui's colours start from its light or dark style by the theme's `dark` flag, with panels from the theme's background, text from ink and selection from `selected`, and an optional `[ui]` section overriding them; the lint test requires 4.5:1 contrast against the background for ink, clue and user entry, 3:1 for error and grid |
+| — | Persistence | **Decided** 2026-11-27 | (a) **Window state** is eframe's: its `persistence` feature with `persistence_path` = `app.ron` in the app folder, which restores size, position, maximised and full-screen and moves the window back on screen if its monitor is gone; egui's own memory isn't kept. The file dialogs' folders live there too. Rejected: size and position in `settings.toml` (the app can't check monitors before the window exists, so a window could open off-screen); size only (the window doesn't return to its place). (b) **Session restore** keeps every game: `sessions/<game>.sav` in the app folder (a C save file); opening a game from the library resumes it, and `settings.toml`'s `last_game` reopens the last screen (a game or the library) at launch. A finished game resumes as it is; a file that won't load starts a new game and says why. Rejected: the last game only; Linux's XDG state folder (one app folder on every OS). (c) A session is written about a second after the game changes (moves, undo, new game, solve, restart, loading, preferences; the timer alone doesn't count), when the app leaves the game and on exit; a crash loses at most that second. Rejected: only on leaving and exit; eframe's 30-second save hook. (d) **Save…** and **Load…** in the Game menu (Cmd/Ctrl+S, Cmd/Ctrl+O; Load also in the library) open `egui-file-dialog` dialogs listing `.sav` files, starting in Documents. Being in-process, the dialog makes macOS ask once per protected folder (Documents, Desktop, Downloads) to let the app in; accepted, since a packaged app remembers the answer. Rejected: starting in the home folder (saves would land there by default, and the sidebar folders still ask); native dialogs on macOS only. Loading another game's file switches to that game and becomes its session; a file dropped on the window or named on the command line (`puzzles game.sav`) does the same. Files over 16 MiB are refused. Rejected: native dialogs (`rfd`): not themed, and UI tests can't drive them. macOS's "Open With" (Apple events) comes with packaging |
 
 ---
 
@@ -708,9 +709,10 @@ generator would change every puzzle. So:
 | `egui_extras` | images/SVG in the UI (icons; later, library thumbnails) |
 | `egui_commonmark` (or similar) | renders the per-game Markdown rules in the side panel (release 1) |
 | `egui-phosphor` | toolbar and menu icons (desktop shell decision; it pins eframe/egui to 0.36 for now) |
-| `rfd` (`xdg-portal` on Linux) | native open/save dialogs |
+| `egui-file-dialog` | Save and Load dialogs drawn with egui (persistence decision; 0.15 is the release for egui 0.36) |
+| `eframe` `persistence` | window size and place, and the file dialogs' folders, in `app.ron` |
 | `directories` | per-OS config/data paths |
-| `serde` + `toml` | app settings, window state, statistics, user presets (puzzle prefs and saves keep the C formats) |
+| `serde` + `toml` | app settings, statistics, user presets (puzzle prefs and saves keep the C formats) |
 | *(later)* `toml_edit` | writing `presets.toml` from the app without losing the user's comments |
 | `rand` | fresh seeds for new games |
 | `env_logger` | log output |
@@ -1231,8 +1233,32 @@ at the top.
     Logging in the real window found it; the harness doesn't reproduce
     it.
 
-  Next: `ui/persistence`: window state in `settings.toml`, `.sav` save
-  and load, drag-and-drop, session restore.
+  - persistence (`ui/persistence`): every game's session in
+    `sessions/<game>.sav`, resumed when the game opens, written a second
+    after a change, on leaving the game and on exit; `settings.toml`'s
+    `last_game` reopens the last screen at launch. Save… and Load… (Game
+    menu, Cmd/Ctrl+S and +O, Load also in the library) through
+    `egui-file-dialog`; a saved game dropped on the window or named on
+    the command line opens in its game. The window's place is eframe's
+    (`app.ron`). In the app: `SaveFile` (identify the game, size limit),
+    `Session::resume`/`load`/`save_as`/`autosave`. UI tests restore a
+    game across launches, save and load through the real dialogs, and
+    drop files on the window; screenshots of both dialogs. They found
+    that Escape didn't close the Load dialog: the crate ignores Escape
+    while any widget has focus, and the puzzle kept it, so the app now
+    releases focus when a file dialog opens (Escape in the Save dialog
+    first leaves the name field). The crate's search field is egui's
+    near-black canvas in every theme, unreadable in light ones, so it is
+    hidden. The real-window check (macOS, computer use) confirmed the
+    autosave a second after Solve with the app idle, the window's moved
+    and resized place and the solved Flip game coming back after Quit,
+    upstream's `fifteen.sav` opened from the command line, and Escape
+    closing the Load dialog. It also showed a cost of an in-process
+    dialog: listing Documents (or Desktop, Downloads) makes macOS ask the
+    user to allow the app into that folder, which the system's own
+    panels never do.
+
+  Next: `ui/fullscreen`: full-screen, immersive mode, zoom and pan.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

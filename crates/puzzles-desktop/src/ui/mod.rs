@@ -1,11 +1,13 @@
 //! The egui side of the app: the game library, the toolbar with its
-//! Type and Game menus, the puzzle view, the status bar, configuration
-//! and Settings dialogs, themes, and the "Generating…" overlay (desktop
-//! shell, dialogs and presets, and themes decisions in
+//! Type and Game menus, the puzzle view, the status bar, configuration,
+//! Settings and file dialogs, themes, saved games dropped on the window,
+//! session restore, and the "Generating…" overlay (desktop shell,
+//! dialogs and presets, themes, and persistence decisions in
 //! `docs/porting-plan.md`).
 
 use eframe::egui;
 mod dialogs;
+mod files;
 mod fonts;
 mod input;
 mod menus;
@@ -13,22 +15,26 @@ mod puzzle_view;
 mod settings;
 mod shortcuts;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use egui::{Align2, Frame, Margin, RichText};
+use egui_file_dialog::FileDialogStorage;
 use egui_phosphor::regular as icon;
 use puzzles_core::midend::ConfigKind;
 use puzzles_games::{GAMES, GameInfo};
 
 use crate::app::command::Command;
 use crate::app::paths::AppDirs;
+use crate::app::save_file::SaveFile;
 use crate::app::session::{Outcome, Session};
 use crate::app::settings::Settings;
 use crate::app::themes::Themes;
 use crate::app::user_presets::PresetsFile;
 use crate::app::watch::FolderWatch;
 use dialogs::{Dialog, DialogAction};
+use files::{FileAction, FileDialog};
 use menus::MenuAction;
 use puzzle_view::PuzzleView;
 use settings::{SettingsAction, SettingsDialog};
@@ -36,11 +42,15 @@ use settings::{SettingsAction, SettingsDialog};
 /// The theme used when the chosen one can't be found.
 const FALLBACK_THEME: &str = "Light";
 
+/// The file dialog's folders in eframe's storage.
+const FILE_DIALOG_KEY: &str = "file_dialog";
+
 /// An open dialog.
 #[derive(Debug)]
 enum OpenDialog {
     Config(Dialog),
     Settings(SettingsDialog),
+    File(Box<FileDialog>),
 }
 
 /// What the window shows.
@@ -66,6 +76,12 @@ pub struct PuzzlesApp {
     dirs: Option<AppDirs>,
     presets_file: Option<PresetsFile>,
     dialog: Option<OpenDialog>,
+    /// What the file dialogs remember.
+    file_storage: FileDialogStorage,
+    /// False until the first frame has reopened the last game.
+    started: bool,
+    /// A saved game to open at launch (from the command line).
+    launch_file: Option<PathBuf>,
 }
 
 /// What the toolbar asked for.
@@ -75,16 +91,26 @@ enum ToolbarAction {
 }
 
 impl PuzzlesApp {
-    /// Sets up fonts and style, with the user's files in the system's
-    /// folder for them.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        Self::with_dirs(cc, AppDirs::detect())
+    /// Sets up fonts and style, keeping the user's files in `dirs` (or
+    /// nowhere). The first frame opens `launch_file`, a saved game, if
+    /// given, else the game open when the app last ran.
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        dirs: Option<AppDirs>,
+        launch_file: Option<PathBuf>,
+    ) -> Self {
+        let mut app = Self::with_dirs(cc, dirs);
+        app.launch_file = launch_file;
+        app
     }
 
-    /// [`new`](Self::new), keeping the user's files in `dirs` (or
-    /// nowhere).
+    /// [`new`](Self::new) without a file to open.
     pub fn with_dirs(cc: &eframe::CreationContext<'_>, dirs: Option<AppDirs>) -> Self {
         fonts::install(&cc.egui_ctx);
+        let file_storage = cc
+            .storage
+            .and_then(|s| eframe::get_value(s, FILE_DIALOG_KEY))
+            .unwrap_or_default();
         let presets_file = dirs.as_ref().map(|d| PresetsFile::new(d.presets()));
         let (settings, mut error) = dirs.as_ref().map_or((Settings::default(), None), |d| {
             Settings::load(&d.settings())
@@ -108,6 +134,61 @@ impl PuzzlesApp {
             dirs,
             presets_file,
             dialog: None,
+            file_storage,
+            started: false,
+            launch_file: None,
+        }
+    }
+
+    /// Opens the saved game named on the command line, or else the game
+    /// open when the app last ran.
+    fn start(&mut self, ctx: &egui::Context) {
+        if let Some(path) = self.launch_file.take() {
+            match SaveFile::read(&path) {
+                Ok(file) => self.open_save(ctx, &file),
+                Err(e) => self.error = Some(e),
+            }
+        } else if let Some(info) = self
+            .settings
+            .last_game
+            .as_deref()
+            .and_then(puzzles_games::find)
+        {
+            self.open(ctx, info);
+        }
+    }
+
+    /// Shows a message: in the status bar with a game open, else in the
+    /// library.
+    fn report(&mut self, message: String) {
+        match &mut self.screen {
+            Screen::Game { session, .. } => session.notify(message),
+            Screen::Library => self.error = Some(message),
+        }
+    }
+
+    /// Writes the open game's session, before leaving it.
+    fn save_session(&mut self) -> Option<String> {
+        match &mut self.screen {
+            Screen::Game { session, .. } => session.save_session().err(),
+            Screen::Library => None,
+        }
+    }
+
+    /// Records the screen in the settings, so the next launch reopens it.
+    fn remember_screen(&mut self) {
+        let current = match &self.screen {
+            Screen::Game { session, .. } => Some(session.name()),
+            Screen::Library => None,
+        };
+        if self.settings.last_game.as_deref() == current {
+            return;
+        }
+        self.settings.last_game = current.map(str::to_owned);
+        if let Some(dirs) = &self.dirs
+            && let Err(e) = self.settings.save(&dirs.settings())
+        {
+            self.report(format!("Saving settings: {e}"));
         }
     }
 
@@ -162,25 +243,96 @@ impl PuzzlesApp {
         self.applied_theme = Some(theme);
     }
 
-    fn open(&mut self, ctx: &egui::Context, info: &'static GameInfo) {
+    /// A session for `info`'s game, with its presets, but no puzzle yet.
+    fn new_session(
+        &mut self,
+        ctx: &egui::Context,
+        info: &'static GameInfo,
+    ) -> Result<Session, String> {
         let repaint = ctx.clone();
         let waker = Arc::new(move || repaint.request_repaint());
         let theme = self.applied_theme.as_deref().unwrap_or(FALLBACK_THEME);
-        match Session::new(info, self.themes.set(), theme, waker, self.dirs.as_ref()) {
-            Ok(mut session) => {
-                if let Some(file) = &mut self.presets_file {
-                    file.refresh();
-                    session.use_presets_file(file);
-                }
-                self.dialog = None;
-                self.error = None;
-                self.screen = Screen::Game {
-                    session: Box::new(session),
-                    view: PuzzleView::default(),
-                };
-            }
-            Err(e) => self.error = Some(e),
+        let mut session = Session::new(info, self.themes.set(), theme, waker, self.dirs.as_ref())?;
+        if let Some(file) = &mut self.presets_file {
+            file.refresh();
+            session.use_presets_file(file);
         }
+        Ok(session)
+    }
+
+    /// Shows `session`, leaving the game open before (saving it).
+    fn show(&mut self, mut session: Session) {
+        if let Some(e) = self.save_session() {
+            session.notify(e);
+        }
+        self.dialog = None;
+        self.error = None;
+        self.screen = Screen::Game {
+            session: Box::new(session),
+            view: PuzzleView::default(),
+        };
+    }
+
+    /// Opens `info`'s game where it was left, or a new one.
+    fn open(&mut self, ctx: &egui::Context, info: &'static GameInfo) {
+        match self.new_session(ctx, info) {
+            Ok(mut session) => {
+                session.resume();
+                self.show(session);
+            }
+            Err(e) => self.report(e),
+        }
+    }
+
+    /// Opens a saved game, in its game (switching games if needed).
+    fn open_save(&mut self, ctx: &egui::Context, file: &SaveFile) {
+        if let Screen::Game { session, .. } = &mut self.screen
+            && session.name() == file.game.name
+        {
+            if let Err(e) = session.load(&file.data) {
+                session.notify(e);
+            }
+            return;
+        }
+        let loaded = self.new_session(ctx, file.game).and_then(|mut session| {
+            session.load(&file.data)?;
+            Ok(session)
+        });
+        match loaded {
+            Ok(session) => self.show(session),
+            Err(e) => self.report(e),
+        }
+    }
+
+    /// Opens the saved game at `path`.
+    fn open_path(&mut self, ctx: &egui::Context, path: &std::path::Path) {
+        match SaveFile::read(path) {
+            Ok(file) => self.open_save(ctx, &file),
+            Err(e) => self.report(e),
+        }
+    }
+
+    /// Opens a saved game dropped on the window (the first, if several).
+    fn dropped(&mut self, ctx: &egui::Context) {
+        let path = ctx.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_owned()));
+        if let Some(path) = path {
+            self.open_path(ctx, &path);
+        }
+    }
+
+    /// While files are dragged over the window: says what dropping does.
+    fn drop_hint(ctx: &egui::Context) {
+        if ctx.input(|i| i.raw.hovered_files.is_empty()) {
+            return;
+        }
+        egui::Area::new(egui::Id::new("drop-hint"))
+            .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                Frame::popup(ui.style()).show(ui, |ui| {
+                    ui.label("Drop a saved game to open it");
+                });
+            });
     }
 
     /// Opens Settings, with the open game's preferences.
@@ -201,15 +353,16 @@ impl PuzzlesApp {
     }
 
     fn menu_action(&mut self, ctx: &egui::Context, action: MenuAction) {
-        if action == MenuAction::Settings {
-            self.open_settings();
-            return;
+        match action {
+            MenuAction::Settings => return self.open_settings(),
+            MenuAction::Command(command) => return self.run(ctx, command),
+            _ => {}
         }
         let Screen::Game { session, .. } = &mut self.screen else {
             return;
         };
         match action {
-            MenuAction::Settings => {}
+            MenuAction::Settings | MenuAction::Command(_) => {}
             MenuAction::Preset(id) => session.choose_preset(id),
             MenuAction::Dialog(kind) => {
                 self.dialog = session
@@ -248,10 +401,31 @@ impl PuzzlesApp {
                     },
                 }
             }
+            Some(OpenDialog::File(dialog)) => {
+                let action = dialog.show(ctx);
+                if action == FileAction::Open {
+                    return;
+                }
+                self.file_storage = dialog.storage();
+                self.dialog = None;
+                match action {
+                    FileAction::Open | FileAction::Close => {}
+                    FileAction::Save(path) => {
+                        if let Screen::Game { session, .. } = &mut self.screen {
+                            match session.save_as(&path) {
+                                Ok(()) => session.notify(format!("Saved to {}.", path.display())),
+                                Err(e) => session.notify(e),
+                            }
+                        }
+                    }
+                    FileAction::Load(path) => self.open_path(ctx, &path),
+                }
+            }
             Some(OpenDialog::Settings(dialog)) => match dialog.show(ctx, &self.themes) {
                 SettingsAction::Open => {}
                 SettingsAction::Close => self.dialog = None,
-                SettingsAction::Apply(settings, prefs) => {
+                SettingsAction::Apply(mut settings, prefs) => {
+                    settings.last_game.clone_from(&self.settings.last_game);
                     if let (Some(items), Screen::Game { session, .. }) = (prefs, &mut self.screen)
                         && let Err(e) = session.apply_config(ConfigKind::Prefs, &items)
                     {
@@ -275,13 +449,36 @@ impl PuzzlesApp {
         }
     }
 
+    /// Shows a file dialog. The puzzle lets go of the keyboard first:
+    /// the dialog ignores Escape while any widget has focus.
+    fn open_file_dialog(&mut self, ctx: &egui::Context, dialog: FileDialog) {
+        ctx.memory_mut(|m| {
+            if let Some(id) = m.focused() {
+                m.surrender_focus(id);
+            }
+        });
+        self.dialog = Some(OpenDialog::File(Box::new(dialog)));
+    }
+
     fn run(&mut self, ctx: &egui::Context, command: Command) {
         match (command, &mut self.screen) {
             (Command::Games, _) => {
                 self.dialog = None;
+                let error = self.save_session();
                 self.screen = Screen::Library;
+                self.error = error;
             }
             (Command::Quit, _) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            (Command::Load, _) => {
+                let dialog = FileDialog::load(self.file_storage.clone());
+                self.open_file_dialog(ctx, dialog);
+            }
+            (Command::Save, Screen::Game { session, .. }) => {
+                if session.can(Command::Save) {
+                    let dialog = FileDialog::save(self.file_storage.clone(), session.name());
+                    self.open_file_dialog(ctx, dialog);
+                }
+            }
             (_, Screen::Game { session, .. }) => {
                 if session.command(command) == Outcome::Quit {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -305,11 +502,17 @@ impl PuzzlesApp {
     fn library(&mut self, ui: &mut egui::Ui) {
         let mut chosen = None;
         let mut settings = false;
+        let mut load = false;
+        let tooltip = Command::Load.tooltip(self.mac);
         egui::CentralPanel::default().show(ui, |ui| {
             egui::Sides::new().show(
                 ui,
                 |_| {},
-                |ui| settings = Self::settings_button(ui).clicked(),
+                |ui| {
+                    settings = Self::settings_button(ui).clicked();
+                    load =
+                        Self::icon_button(ui, icon::FOLDER_OPEN, "Load…", &tooltip, true).clicked();
+                },
             );
             ui.vertical_centered(|ui| {
                 ui.set_max_width(520.0);
@@ -331,6 +534,8 @@ impl PuzzlesApp {
         });
         if settings {
             self.open_settings();
+        } else if load {
+            self.run(ui.ctx(), Command::Load);
         } else if let Some(info) = chosen {
             self.open(ui.ctx(), info);
         }
@@ -338,14 +543,25 @@ impl PuzzlesApp {
 
     /// The gear that opens Settings.
     fn settings_button(ui: &mut egui::Ui) -> egui::Response {
-        let glyph = RichText::new(icon::GEAR_SIX)
-            .size(20.0)
-            .family(fonts::icon_family());
+        Self::icon_button(ui, icon::GEAR_SIX, "Settings", "Settings", true)
+    }
+
+    /// A toolbar-style icon button. The icon is a private-use character,
+    /// so the button is named `label` for screen readers (and UI tests).
+    fn icon_button(
+        ui: &mut egui::Ui,
+        glyph: &str,
+        label: &str,
+        tooltip: &str,
+        enabled: bool,
+    ) -> egui::Response {
+        let glyph = RichText::new(glyph).size(20.0).family(fonts::icon_family());
         let response = ui
-            .add(egui::Button::new(glyph).frame(false))
-            .on_hover_text("Settings");
+            .add_enabled(enabled, egui::Button::new(glyph).frame(false))
+            .on_hover_text(tooltip)
+            .on_disabled_hover_text(tooltip);
         response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Settings"));
+            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
         response
     }
 
@@ -399,7 +615,7 @@ impl PuzzlesApp {
                             if let Some(a) = menus::type_menu(ui, session, opened) {
                                 clicked = Some(ToolbarAction::Menu(a));
                             }
-                            if let Some(a) = menus::game_menu(ui, session) {
+                            if let Some(a) = menus::game_menu(ui, session, mac) {
                                 clicked = Some(ToolbarAction::Menu(a));
                             }
                             if Self::settings_button(ui).clicked() {
@@ -416,24 +632,11 @@ impl PuzzlesApp {
                         Command::Undo => icon::ARROW_U_UP_LEFT,
                         Command::Redo => icon::ARROW_U_UP_RIGHT,
                         Command::Solve => icon::LIGHTBULB,
-                        Command::Quit => continue,
+                        Command::Save | Command::Load | Command::Quit => continue,
                     };
                     let enabled = session.can(command);
-                    let glyph = RichText::new(glyph).size(20.0).family(fonts::icon_family());
-                    let button = egui::Button::new(glyph).frame(false);
-                    let response = ui
-                        .add_enabled(enabled, button)
-                        .on_hover_text(command.tooltip(mac))
-                        .on_disabled_hover_text(command.tooltip(mac));
-                    // The icon is a private-use character: name the button
-                    // for screen readers (and UI tests).
-                    response.widget_info(|| {
-                        egui::WidgetInfo::labeled(
-                            egui::WidgetType::Button,
-                            enabled,
-                            command.label(),
-                        )
-                    });
+                    let tooltip = command.tooltip(mac);
+                    let response = Self::icon_button(ui, glyph, command.label(), &tooltip, enabled);
                     if response.clicked() {
                         clicked = Some(ToolbarAction::Command(command));
                     }
@@ -489,6 +692,13 @@ impl eframe::App for PuzzlesApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.update_theme(&ctx);
+        if !self.started {
+            self.started = true;
+            self.start(&ctx);
+        }
+        if self.dialog.is_none() {
+            self.dropped(&ctx);
+        }
         let mut commands = Vec::new();
         if self.dialog.is_none() {
             ctx.input_mut(|i| {
@@ -501,8 +711,12 @@ impl eframe::App for PuzzlesApp {
         }
 
         if let Screen::Game { session, .. } = &mut self.screen {
+            let now = Instant::now();
             session.poll();
-            session.tick(Instant::now());
+            session.tick(now);
+            if let Some(wait) = session.autosave(now) {
+                ctx.request_repaint_after(wait);
+            }
         }
         match self.toolbar(ui) {
             Some(ToolbarAction::Command(command)) => commands.push(command),
@@ -529,10 +743,27 @@ impl eframe::App for PuzzlesApp {
                 ctx.request_repaint();
             }
         }
+        Self::drop_hint(&ctx);
         if outcome == Outcome::Quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         self.set_title(&ctx);
+        self.remember_screen();
+    }
+
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, FILE_DIALOG_KEY, &self.file_storage);
+    }
+
+    fn on_exit(&mut self) {
+        // Nowhere to show an error once the window is gone.
+        let _ = self.save_session();
+    }
+
+    /// Only the window's place and the file dialog's folders are kept;
+    /// egui's own memory (scroll positions, open menus) isn't.
+    fn persist_egui_memory(&self) -> bool {
+        false
     }
 }
 

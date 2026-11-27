@@ -6,11 +6,15 @@
 //! the thread can't be stopped (the ported generators have no cancel
 //! points), so a generation that never ends keeps running until the app
 //! quits.
+//!
+//! Session restore: each game's position is kept in `sessions/<game>.sav`
+//! (a C save file), written about a second after the game changes, and
+//! when the app leaves the game or quits. Opening the game resumes it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use puzzles_canvas::Canvas;
 use puzzles_core::button::{Button, ButtonKind, UiAction};
@@ -27,6 +31,10 @@ use super::user_presets::{PresetsFile, game_key};
 
 /// Wakes the UI when a generation finishes (from the worker thread).
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
+
+/// How long a changed game waits before it is saved, so a burst of
+/// moves is written once. A crash loses at most this much play.
+pub const AUTOSAVE_DELAY: Duration = Duration::from_secs(1);
 
 /// What the app should do after an event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,11 +78,16 @@ pub struct Session {
     preset_errors: Vec<String>,
     /// Where this game's preferences are saved, if anywhere.
     prefs_path: Option<PathBuf>,
+    /// Where this game's session is kept, if anywhere.
+    saved_path: Option<PathBuf>,
+    /// When the game first changed since the session was last written.
+    unsaved_since: Option<Instant>,
 }
 
 impl Session {
-    /// Opens `info`'s game in the theme `theme` and starts generating
-    /// the first puzzle.
+    /// Opens `info`'s game in the theme `theme`, with its preferences.
+    /// There is no puzzle yet: [`resume`](Self::resume) or
+    /// [`load`](Self::load) one.
     ///
     /// # Errors
     /// The theme can't colour this game.
@@ -91,6 +104,7 @@ impl Session {
         let seed: [u8; 16] = rand::random();
         let mut puzzle = info.new_midend(&seed, true, options);
         let prefs_path = dirs.map(|d| d.prefs(info.name));
+        let saved_path = dirs.map(|d| d.session(info.name));
         let mut message = None;
         if let Some(path) = &prefs_path
             && let Ok(data) = std::fs::read(path)
@@ -101,7 +115,7 @@ impl Session {
         let colours = themes
             .resolve(theme, info.name, puzzle.palette())
             .map_err(|e| format!("{}: {e}", info.name))?;
-        let mut session = Self {
+        Ok(Self {
             info,
             puzzle,
             colours,
@@ -116,9 +130,102 @@ impl Session {
             env_presets,
             preset_errors: Vec::new(),
             prefs_path,
+            saved_path,
+            unsaved_since: None,
+        })
+    }
+
+    /// Resumes the game's saved session, or starts generating a puzzle if
+    /// there is none (or it can't be read, saying why).
+    pub fn resume(&mut self) {
+        let saved = self
+            .saved_path
+            .as_ref()
+            .and_then(|path| std::fs::read(path).ok());
+        let Some(data) = saved else {
+            self.start_new_game();
+            return;
         };
-        session.start_new_game();
-        Ok(session)
+        if let Err(e) = self.puzzle.deserialise(&mut data.as_slice()) {
+            self.start_new_game();
+            self.message = Some(format!(
+                "Couldn't resume the last {} game: {e}",
+                self.info.name
+            ));
+        } else {
+            self.installed();
+        }
+    }
+
+    /// Replaces the game with a saved one (a C save file of this game),
+    /// dropping a New Game in progress. It becomes the game's session.
+    ///
+    /// # Errors
+    /// C's message if the file is rejected; nothing changes then.
+    pub fn load(&mut self, data: &[u8]) -> Result<(), String> {
+        self.puzzle
+            .deserialise(&mut &data[..])
+            .map_err(|e| e.to_string())?;
+        self.generation = None;
+        self.message = None;
+        self.installed();
+        self.changed();
+        Ok(())
+    }
+
+    /// A puzzle is in place: lay it out and draw it.
+    fn installed(&mut self) {
+        self.has_game = true;
+        self.layout = None;
+    }
+
+    /// The game changed, so the session is written soon.
+    fn changed(&mut self) {
+        self.unsaved_since.get_or_insert_with(Instant::now);
+    }
+
+    /// The game as a save file, if there is one.
+    fn serialise(&self) -> Option<Vec<u8>> {
+        let mut data = Vec::new();
+        (self.has_game && self.puzzle.serialise(&mut data).is_ok()).then_some(data)
+    }
+
+    /// Writes the game to `path` as a save file.
+    ///
+    /// # Errors
+    /// A message for the user: there's no game yet, or writing failed.
+    pub fn save_as(&self, path: &Path) -> Result<(), String> {
+        let data = self
+            .serialise()
+            .ok_or_else(|| "There is no game to save yet.".to_owned())?;
+        write_atomically(path, &data).map_err(|e| format!("Saving {}: {e}", path.display()))
+    }
+
+    /// Writes the session now, if there is a game and a place for it.
+    ///
+    /// # Errors
+    /// A message for the user if writing failed.
+    pub fn save_session(&mut self) -> Result<(), String> {
+        self.unsaved_since = None;
+        match (&self.saved_path, self.serialise()) {
+            (Some(path), Some(data)) => write_atomically(path, &data)
+                .map_err(|e| format!("Saving the game to {}: {e}", path.display())),
+            _ => Ok(()),
+        }
+    }
+
+    /// Writes the session if the game changed at least
+    /// [`AUTOSAVE_DELAY`] before `now`. Returns how long until the next
+    /// write is due, if one is waiting.
+    pub fn autosave(&mut self, now: Instant) -> Option<Duration> {
+        let due = self.unsaved_since? + AUTOSAVE_DELAY;
+        if now < due {
+            return Some(due - now);
+        }
+        if let Err(e) = self.save_session() {
+            self.message = Some(e);
+        }
+        None
     }
 
     /// Recolours the game in the theme `theme`, redrawing it in full.
@@ -215,8 +322,8 @@ impl Session {
 
     fn finish(&mut self, generated: GeneratedGame) {
         if self.puzzle.finish_new_game(generated) {
-            self.has_game = true;
-            self.layout = None;
+            self.installed();
+            self.changed();
         }
     }
 
@@ -311,7 +418,11 @@ impl Session {
                 Outcome::Continue
             }
             KeyResult::Quit => Outcome::Quit,
-            KeyResult::SomeEffect | KeyResult::NoEffect | KeyResult::Unused => Outcome::Continue,
+            KeyResult::SomeEffect => {
+                self.changed();
+                Outcome::Continue
+            }
+            KeyResult::NoEffect | KeyResult::Unused => Outcome::Continue,
         }
     }
 
@@ -320,7 +431,8 @@ impl Session {
     pub fn can(&self, command: Command) -> bool {
         let playing = self.has_game && !self.is_generating();
         match command {
-            Command::Games | Command::Quit => true,
+            Command::Games | Command::Load | Command::Quit => true,
+            Command::Save => self.has_game,
             Command::NewGame => !self.is_generating(),
             Command::Restart => playing,
             Command::Undo => playing && self.puzzle.can_undo(),
@@ -329,14 +441,15 @@ impl Session {
         }
     }
 
-    /// Runs a game command. [`Command::Games`] is the UI's.
+    /// Runs a game command. [`Command::Games`], [`Command::Save`] and
+    /// [`Command::Load`] are the UI's.
     pub fn command(&mut self, command: Command) -> Outcome {
         if !self.can(command) {
             return Outcome::Continue;
         }
         self.message = None;
         match command {
-            Command::Games => Outcome::Continue,
+            Command::Games | Command::Save | Command::Load => Outcome::Continue,
             Command::Quit => Outcome::Quit,
             Command::NewGame => {
                 self.start_new_game();
@@ -344,13 +457,15 @@ impl Session {
             }
             Command::Restart => {
                 self.puzzle.restart_game();
+                self.changed();
                 Outcome::Continue
             }
             Command::Undo => self.input(0, 0, Button::new(ButtonKind::Ui(UiAction::Undo))),
             Command::Redo => self.input(0, 0, Button::new(ButtonKind::Ui(UiAction::Redo))),
             Command::Solve => {
-                if let Err(e) = self.puzzle.solve() {
-                    self.message = Some(e.to_string());
+                match self.puzzle.solve() {
+                    Ok(()) => self.changed(),
+                    Err(e) => self.message = Some(e.to_string()),
                 }
                 Outcome::Continue
             }
@@ -439,6 +554,8 @@ impl Session {
             ConfigKind::Prefs => {
                 self.puzzle.force_redraw();
                 self.save_prefs();
+                // Preferences can change the UI, which the session keeps.
+                self.changed();
             }
         }
         Ok(())
@@ -494,15 +611,51 @@ mod tests {
         puzzles_games::find("Flip").expect("built in")
     }
 
-    fn open() -> Session {
+    /// A Flip session keeping its files in `dirs`, with no puzzle yet.
+    fn session_in(dirs: Option<&AppDirs>) -> Session {
         Session::new(
             flip(),
             &ThemeSet::builtin(),
             "classic",
             Arc::new(|| {}),
-            None,
+            dirs,
         )
         .unwrap()
+    }
+
+    fn open() -> Session {
+        let mut s = session_in(None);
+        s.resume();
+        s
+    }
+
+    /// A fresh folder for one test's files.
+    fn test_dirs(name: &str) -> AppDirs {
+        let dir =
+            std::env::temp_dir().join(format!("puzzles-session-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        AppDirs::at(dir)
+    }
+
+    /// Clicks the middle of the puzzle, a move in Flip.
+    fn play(s: &mut Session) {
+        let (w, h) = {
+            let (c, _) = s.canvas_mut().unwrap();
+            (c.width() as i32, c.height() as i32)
+        };
+        for action in [MouseAction::Press, MouseAction::Release] {
+            s.input(w / 2, h / 2, Button::mouse(MouseButton::Left, action));
+        }
+    }
+
+    /// A session with a generated game and one move, its files in `dirs`.
+    fn played_in(dirs: &AppDirs) -> Session {
+        let mut s = session_in(Some(dirs));
+        s.resume();
+        wait(&mut s);
+        s.layout((400, 300), 1.0);
+        play(&mut s);
+        s
     }
 
     /// Waits for the generation in progress, as the UI does when woken.
@@ -603,6 +756,103 @@ mod tests {
         assert_eq!(s.input(0, 0, Button::key('q')), Outcome::Quit);
         assert_eq!(s.command(Command::Quit), Outcome::Quit);
         assert_eq!(s.title(), "Flip — Puzzles");
+    }
+
+    #[test]
+    fn a_saved_session_resumes_where_it_was_left() {
+        let dirs = test_dirs("resume");
+        let mut s = played_in(&dirs);
+        let id = s.game_id();
+        assert!(s.can(Command::Undo));
+        s.save_session().unwrap();
+        assert!(dirs.session("Flip").exists());
+
+        let mut again = session_in(Some(&dirs));
+        again.resume();
+        assert!(again.has_game && !again.is_generating(), "no generation");
+        assert_eq!(again.game_id(), id);
+        assert!(again.can(Command::Undo), "with its moves");
+        std::fs::remove_dir_all(dirs.session("Flip").parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn changes_are_saved_once_play_pauses() {
+        let dirs = test_dirs("autosave");
+        let mut s = session_in(Some(&dirs));
+        s.resume();
+        let now = Instant::now();
+        assert_eq!(s.autosave(now), None, "nothing to save while generating");
+        wait(&mut s);
+        let since = s.unsaved_since.expect("a new game is a change");
+        let wait = s.autosave(since).expect("waits");
+        assert!(wait <= AUTOSAVE_DELAY && wait > Duration::ZERO);
+        assert!(!dirs.session("Flip").exists());
+
+        assert_eq!(s.autosave(since + AUTOSAVE_DELAY), None);
+        let saved = std::fs::read(dirs.session("Flip")).expect("saved");
+        assert_eq!(s.autosave(since + 2 * AUTOSAVE_DELAY), None, "nothing new");
+
+        s.layout((400, 300), 1.0);
+        play(&mut s);
+        let since = s.unsaved_since.expect("a move is a change");
+        s.autosave(since + AUTOSAVE_DELAY);
+        assert_ne!(std::fs::read(dirs.session("Flip")).unwrap(), saved);
+        std::fs::remove_dir_all(dirs.session("Flip").parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn a_broken_session_starts_a_new_game_and_says_so() {
+        let dirs = test_dirs("broken");
+        let path = dirs.session("Flip");
+        write_atomically(&path, b"SAVEFILE:5:wrong").unwrap();
+        let mut s = session_in(Some(&dirs));
+        s.resume();
+        assert!(s.is_generating());
+        assert!(
+            s.status_line()
+                .starts_with("Couldn't resume the last Flip game"),
+            "{}",
+            s.status_line()
+        );
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn saved_games_load_and_replace_the_game() {
+        let dirs = test_dirs("load");
+        let s = played_in(&dirs);
+        let file = dirs.session("Flip").with_file_name("mine.sav");
+        s.save_as(&file).unwrap();
+        let data = std::fs::read(&file).unwrap();
+
+        let mut other = ready();
+        assert_ne!(other.game_id(), s.game_id());
+        other.command(Command::NewGame);
+        assert!(other.is_generating());
+        other.load(&data).unwrap();
+        assert!(!other.is_generating(), "loading drops the New Game");
+        assert_eq!(other.game_id(), s.game_id());
+        assert!(other.can(Command::Undo));
+
+        let id = other.game_id();
+        assert_eq!(
+            other.load(&with_game(&data, "Fifteen")).unwrap_err(),
+            "Save file is from a different game"
+        );
+        assert_eq!(other.game_id(), id, "unchanged");
+        assert!(session_in(None).save_as(&file).is_err(), "no game yet");
+        std::fs::remove_dir_all(file.parent().unwrap()).unwrap();
+    }
+
+    /// A Flip save file with its `GAME` line naming another game.
+    fn with_game(data: &[u8], name: &str) -> Vec<u8> {
+        String::from_utf8(data.to_vec())
+            .unwrap()
+            .replace(
+                "GAME    :4:Flip",
+                &format!("GAME    :{}:{name}", name.len()),
+            )
+            .into_bytes()
     }
 
     #[test]

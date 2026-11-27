@@ -16,6 +16,10 @@ pub enum Command {
     Redo,
     /// Show the solution.
     Solve,
+    /// Save the game to a file.
+    Save,
+    /// Open a saved game.
+    Load,
     /// Close the app.
     Quit,
 }
@@ -43,6 +47,8 @@ impl Command {
             Self::Undo => "Undo",
             Self::Redo => "Redo",
             Self::Solve => "Solve",
+            Self::Save => "Save…",
+            Self::Load => "Load…",
             Self::Quit => "Quit",
         }
     }
@@ -61,6 +67,10 @@ impl Command {
             (Self::Undo, false) => "Ctrl+Z",
             (Self::Redo, true) => "⇧⌘Z",
             (Self::Redo, false) => "Ctrl+Y",
+            (Self::Save, true) => "⌘S",
+            (Self::Save, false) => "Ctrl+S",
+            (Self::Load, true) => "⌘O",
+            (Self::Load, false) => "Ctrl+O",
             (Self::Quit, true) => "⌘Q",
             (Self::Quit, false) => "Ctrl+Q",
             (Self::Solve, _) => return None,

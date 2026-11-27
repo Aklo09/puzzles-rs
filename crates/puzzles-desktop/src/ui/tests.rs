@@ -13,7 +13,7 @@ use eframe::egui::{self, Event, Key, Modifiers, PointerButton, Pos2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
-use super::{PuzzlesApp, Screen};
+use super::{OpenDialog, PuzzlesApp, Screen};
 use puzzles_core::config::ConfigItem;
 use puzzles_core::midend::ConfigKind;
 
@@ -365,6 +365,44 @@ fn screenshots() {
     h.key_press(Key::Escape);
     h.run_steps(2);
 
+    // The file dialogs, in a folder of the test's own.
+    let saves = std::env::temp_dir().join(format!("puzzles-ui-{}-shots", std::process::id()));
+    let _ = std::fs::remove_dir_all(&saves);
+    std::fs::create_dir_all(saves.join("Older games")).unwrap();
+    for name in ["flip.sav", "a long evening.sav"] {
+        session(&h).save_as(&saves.join(name)).unwrap();
+    }
+    std::fs::write(saves.join("notes.txt"), "not listed").unwrap();
+    h.state_mut().file_storage.last_picked_dir = Some(saves.clone());
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.run_steps(2);
+    wait_for_label(&mut h, "flip.sav");
+    h.run();
+    save(&mut h, "dialog-save");
+    // The first Escape leaves the name field.
+    for _ in 0..2 {
+        h.key_press(Key::Escape);
+        h.run_steps(2);
+    }
+    assert!(!dialog_open(&h));
+    h.key_press_modifiers(Modifiers::COMMAND, Key::O);
+    h.run_steps(2);
+    wait_for_label(&mut h, "flip.sav");
+    h.get_by_label_contains("flip.sav").click();
+    h.run();
+    save(&mut h, "dialog-load");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(!dialog_open(&h), "Escape closes it");
+    h.input_mut().hovered_files.push(egui::HoveredFile {
+        path: Some(saves.join("flip.sav")),
+        mime: String::new(),
+    });
+    h.run_steps(2);
+    save(&mut h, "drop-hint");
+    h.input_mut().hovered_files.clear();
+    h.run_steps(2);
+
     // The same in Dark, as when the system is dark.
     h.input_mut().system_theme = Some(egui::Theme::Dark);
     h.run_steps(3);
@@ -374,6 +412,14 @@ fn screenshots() {
     save(&mut h, "settings-dark");
     h.key_press(Key::Escape);
     h.run_steps(2);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::O);
+    h.run_steps(2);
+    wait_for_label(&mut h, "flip.sav");
+    h.run();
+    save(&mut h, "dialog-load-dark");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    let _ = std::fs::remove_dir_all(&saves);
     for game in ["Guess", "Fifteen"] {
         h.key_press_modifiers(Modifiers::COMMAND, Key::G);
         h.step();
@@ -678,10 +724,9 @@ fn settings_choose_a_theme_and_save_it() {
         "{saved}"
     );
 
-    // The next start uses it.
+    // The next start uses it, reopening Flip.
     let mut h = app_with(dirs.clone());
-    h.run_steps(2);
-    open(&mut h, "Flip");
+    wait_for_game(&mut h);
     assert_eq!(background(&h), puzzles_theme::Rgb::grey(0.9));
     let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
 }
@@ -782,4 +827,164 @@ fn drop_downs_stay_above_their_dialog() {
         h.state_mut().applied_theme = None;
         h.run_steps(2);
     }
+}
+
+/// A file dropped on the window, as winit reports one.
+#[derive(Debug)]
+struct Dropped(std::path::PathBuf);
+
+impl egui::DroppedFile for Dropped {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+}
+
+fn drop_file(h: &mut Harness<'_, PuzzlesApp>, path: std::path::PathBuf) {
+    h.input_mut()
+        .dropped_files
+        .push(std::sync::Arc::new(Dropped(path)));
+    h.run_steps(2);
+}
+
+fn game_name(h: &Harness<'_, PuzzlesApp>) -> Option<&'static str> {
+    match &h.state().screen {
+        Screen::Game { session, .. } => Some(session.name()),
+        Screen::Library => None,
+    }
+}
+
+#[test]
+fn the_last_game_reopens_where_it_was_left() {
+    let dirs = test_dirs("restore");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    let centre = puzzle_rect(&h).center();
+    click(&mut h, centre);
+    let id = session(&h).game_id();
+    eframe::App::on_exit(h.state_mut());
+    drop(h);
+
+    // Quitting in a game reopens it, moves and all.
+    let mut h = app_with(dirs.clone());
+    wait_for_game(&mut h);
+    assert_eq!(session(&h).game_id(), id);
+    assert!(session(&h).can(Command::Undo));
+
+    // Leaving it for the library saves it, and the library is next.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.run_steps(2);
+    drop(h);
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    assert_eq!(game_name(&h), None, "the library");
+    open(&mut h, "Flip");
+    assert_eq!(session(&h).game_id(), id, "resumed from the library");
+    assert!(session(&h).can(Command::Undo));
+
+    // Another game starts afresh, and keeps its own session.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.run_steps(2);
+    open(&mut h, "Fifteen");
+    assert!(!session(&h).can(Command::Undo));
+    assert!(dirs.session("Flip").exists());
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}
+
+/// Steps until a label containing `text` shows (file dialogs list
+/// folders on a thread).
+fn wait_for_label(h: &mut Harness<'_, PuzzlesApp>, text: &str) {
+    let start = Instant::now();
+    while h.query_by_label_contains(text).is_none() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{text:?} never showed"
+        );
+        h.step();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn games_save_and_load_through_the_file_dialogs() {
+    let dirs = test_dirs("files");
+    let folder = dirs.themes().with_file_name("saves");
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut h = app_with(dirs.clone());
+    // Start in the test's folder, never the user's Documents.
+    h.state_mut().file_storage.last_picked_dir = Some(folder.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    let centre = puzzle_rect(&h).center();
+    click(&mut h, centre);
+    let id = session(&h).game_id();
+
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.run_steps(2);
+    assert!(matches!(h.state().dialog, Some(OpenDialog::File(_))));
+    wait_for_label(&mut h, "saves");
+    h.get_by_role_and_label(Role::Button, "Save").click();
+    h.run_steps(2);
+    assert!(!dialog_open(&h));
+    assert!(
+        folder.join("flip.sav").exists(),
+        "saved with the suggested name"
+    );
+    assert!(session(&h).status_line().starts_with("Saved to"));
+
+    // A new game, then load the saved one back.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::N);
+    h.step();
+    wait_for_game(&mut h);
+    assert_ne!(session(&h).game_id(), id);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::O);
+    h.run_steps(2);
+    wait_for_label(&mut h, "flip.sav");
+    h.get_by_label_contains("flip.sav").click();
+    h.run_steps(2);
+    h.get_by_role_and_label(Role::Button, "Open").click();
+    h.run_steps(2);
+    assert!(!dialog_open(&h));
+    assert_eq!(session(&h).game_id(), id);
+    assert!(session(&h).can(Command::Undo), "with its moves");
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}
+
+#[test]
+fn dropped_saved_games_open_in_their_game() {
+    let dirs = test_dirs("drop");
+    let file = dirs.themes().with_file_name("fifteen.sav");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Fifteen");
+    session(&h).save_as(&file).unwrap();
+    let id = session(&h).game_id();
+
+    // From the library, and from another game.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.run_steps(2);
+    drop_file(&mut h, file.clone());
+    assert_eq!(game_name(&h), Some("Fifteen"));
+    assert_eq!(session(&h).game_id(), id);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::G);
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    drop_file(&mut h, file.clone());
+    assert_eq!(game_name(&h), Some("Fifteen"));
+    assert_eq!(session(&h).game_id(), id);
+
+    // Anything else is refused, saying why, and nothing changes.
+    let other = dirs.settings();
+    drop_file(&mut h, other);
+    assert_eq!(game_name(&h), Some("Fifteen"));
+    assert!(
+        session(&h).status_line().contains("settings.toml"),
+        "{}",
+        session(&h).status_line()
+    );
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
 }

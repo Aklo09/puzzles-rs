@@ -7,8 +7,10 @@
 //! * Windows: `%APPDATA%\puzzles-rs\`
 //!
 //! Inside: `settings.toml`, `presets.toml` and `themes/*.toml`
-//! (hand-edited), and `prefs/<game>.conf` (C's preference file format,
-//! named as C names them).
+//! (hand-edited), `prefs/<game>.conf` (C's preference file format,
+//! named as C names them), `sessions/<game>.sav` (each game's last
+//! position, a C save file) and `app.ron` (eframe's: the window's place
+//! and the file dialog's folders).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,6 +54,21 @@ impl AppDirs {
         self.config.join("themes")
     }
 
+    /// A game's session: its last position, kept between runs.
+    #[must_use]
+    pub fn session(&self, game_name: &str) -> PathBuf {
+        self.config
+            .join("sessions")
+            .join(format!("{}.sav", game_key(game_name)))
+    }
+
+    /// eframe's state file (window position and size, and what the app
+    /// stores there).
+    #[must_use]
+    pub fn app_state(&self) -> PathBuf {
+        self.config.join("app.ron")
+    }
+
     /// A game's preference file (C's `make_prefs_path` naming).
     #[must_use]
     pub fn prefs(&self, game_name: &str) -> PathBuf {
@@ -92,6 +109,10 @@ mod tests {
         assert_eq!(
             dirs.prefs("Null Game"),
             Path::new("base").join("prefs").join("nullgame.conf")
+        );
+        assert_eq!(
+            dirs.session("Null Game"),
+            Path::new("base").join("sessions").join("nullgame.sav")
         );
     }
 
