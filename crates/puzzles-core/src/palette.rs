@@ -65,6 +65,42 @@ pub enum Series {
     Chains,
 }
 
+/// One palette entry: its name (the enum variant, such as `Wrong`) and
+/// what colour it is. Themes refer to entries by [`key`](Self::key).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaletteEntry {
+    /// The entry's name in the game's colour enum.
+    pub name: &'static str,
+    /// What the colour is.
+    pub spec: ColourSpec,
+}
+
+impl PaletteEntry {
+    /// The name as a theme file key: `snake_case` (`Wrong` → `wrong`,
+    /// `GridLine` → `grid_line`).
+    #[must_use]
+    pub fn key(&self) -> String {
+        snake_case(self.name)
+    }
+}
+
+/// `CamelCase` to `snake_case`.
+#[must_use]
+pub fn snake_case(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (i, c) in name.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('_');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Another entry of the same palette, by index.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ColourRef(pub usize);
@@ -132,9 +168,10 @@ pub enum ColourSpec {
 ///
 /// use puzzles_core::palette::{ColourRef, ColourSpec, DeriveOp, Role};
 /// assert_eq!(Col::PALETTE.len(), 5);
-/// assert_eq!(Col::PALETTE[Col::Wire as usize], ColourSpec::Role(Role::Ink));
+/// assert_eq!(Col::PALETTE[Col::Wire as usize].spec, ColourSpec::Role(Role::Ink));
+/// assert_eq!(Col::PALETTE[Col::Wire as usize].name, "Wire");
 /// assert_eq!(
-///     Col::PALETTE[Col::Border as usize],
+///     Col::PALETTE[Col::Border as usize].spec,
 ///     ColourSpec::Derived { base: ColourRef(0), op: DeriveOp::Shade(0.5) }
 /// );
 /// let index: usize = Col::Powered.into();
@@ -159,8 +196,11 @@ macro_rules! palette {
 
         impl $name {
             /// The colour specs, in palette order (decision D7).
-            pub const PALETTE: &'static [$crate::palette::ColourSpec] = &[
-                $( $crate::palette!(@spec $name $kind $args) ),*
+            pub const PALETTE: &'static [$crate::palette::PaletteEntry] = &[
+                $( $crate::palette::PaletteEntry {
+                    name: stringify!($variant),
+                    spec: $crate::palette!(@spec $name $kind $args),
+                } ),*
             ];
         }
 
@@ -231,8 +271,12 @@ mod tests {
     #[test]
     fn specs_are_in_declaration_order() {
         use ColourSpec::{Derived, Role as R, Series as S, Specific};
+        let specs: Vec<ColourSpec> = Test::PALETTE.iter().map(|e| e.spec).collect();
+        assert_eq!(Test::PALETTE[3].name, "Gem");
+        assert_eq!(Test::PALETTE[1].key(), "piece0");
+        assert_eq!(snake_case("GridLine"), "grid_line");
         assert_eq!(
-            Test::PALETTE,
+            specs,
             [
                 R(Role::Background),
                 S(Series::Pieces, 0),

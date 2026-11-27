@@ -24,6 +24,7 @@ itertools.workspace = true
 proptest.workspace = true
 puzzles-core.workspace = true
 puzzles-games = { workspace = true, features = ["flip", "nullgame"] }
+puzzles-theme.workspace = true
 
 [lints]
 workspace = true

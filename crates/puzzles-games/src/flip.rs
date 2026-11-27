@@ -22,7 +22,7 @@ use puzzles_core::game::{
     Game, GameCtx, GameError, GameStatus, MoveParseError, MoveResult, NewDesc, Rect,
 };
 use puzzles_core::misc::{env_bool, move_cursor};
-use puzzles_core::palette::ColourSpec;
+use puzzles_core::palette::PaletteEntry;
 use puzzles_core::parse::{atoi, scan_int, skip_digits};
 use puzzles_core::preset::PresetMenu;
 use puzzles_core::random::RandomState;
@@ -178,7 +178,7 @@ impl Game for Flip {
 
     const NAME: &'static str = "Flip";
     const PREFERRED_TILESIZE: i32 = PREFERRED_TILE_SIZE;
-    const PALETTE: &'static [ColourSpec] = Col::PALETTE;
+    const PALETTE: &'static [PaletteEntry] = Col::PALETTE;
     const CAN_CONFIGURE: bool = true;
     const CAN_SOLVE: bool = true;
     const CAN_FORMAT_AS_TEXT_EVER: bool = true;

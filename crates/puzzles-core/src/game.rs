@@ -18,7 +18,7 @@ use bitflags::bitflags;
 use crate::button::{Button, MouseButton};
 use crate::config::ConfigItem;
 use crate::drawing::Drawing;
-use crate::palette::ColourSpec;
+use crate::palette::PaletteEntry;
 use crate::preset::PresetMenu;
 use crate::random::RandomState;
 
@@ -60,7 +60,7 @@ pub trait Game: 'static {
     const PREFERRED_TILESIZE: i32;
     /// The colours, as semantic specs (D7; replaces C's `colours()`).
     /// Drawing calls use indices into it.
-    const PALETTE: &'static [ColourSpec];
+    const PALETTE: &'static [PaletteEntry];
     /// C's `flags` word.
     const FLAGS: GameFlags = GameFlags::empty();
 

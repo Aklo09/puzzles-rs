@@ -14,14 +14,18 @@ publish = false
 # (dependency policy, docs/porting-plan.md §5); Cargo warns on unused entries.
 puzzles-core = { path = "crates/puzzles-core" }
 puzzles-games = { path = "crates/puzzles-games", default-features = false }
+puzzles-theme = { path = "crates/puzzles-theme" }
 bitflags = "2.13"
 cc = "1.11"
+csscolorparser = "0.9"
 hex = "0.4"
 itertools = "0.15"
 proptest = "1.12"
+serde = { version = "1.0", features = ["derive"] }
 sha1_smol = "1.0"
 sorted-vec = "0.8"
 thiserror = "2.0"
+toml = "1.2"
 
 [workspace.lints.rust]
 # `deny` rather than `forbid` so that exactly one place can opt out: the FFI
