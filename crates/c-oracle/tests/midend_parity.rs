@@ -389,7 +389,9 @@ fn game_id() -> impl Strategy<Value = String> {
         "#[0-9]{1,6}",
         "3x3:[0-9a-f]{21},[0-9a-f]{3}",
         "2x2:[0-9a-f]{4},[0-9a-f]{1}",
-        "[0-9x:#,a-f]{0,12}",
+        // Junk, with digit runs short enough for an int: C's atoi on
+        // longer ones is platform-dependent (Windows saturates).
+        "([0-9]{0,4}[x:#,a-f]){0,3}[0-9]{0,4}",
     ]
 }
 
@@ -719,7 +721,10 @@ fn line_edit() -> impl Strategy<Value = LineEdit> {
             b"2",
             b"3",
             b"12",
-            b"99999999999",
+            // Big but allocatable: C allocates NSTATES entries up front,
+            // and an int-sized count makes it abort (Windows' atoi
+            // saturates where Linux and macOS wrap).
+            b"1000000",
             b"abc",
             b"5x5c",
             b"3x3",
