@@ -225,6 +225,12 @@ char *oracle_session_text_format(oracle_session *s)
     return s->g->text_format(s->cur);
 }
 
+/* encode_ui of the session's UI, or NULL if the game has none. */
+char *oracle_session_encode_ui(oracle_session *s)
+{
+    return s->g->encode_ui ? s->g->encode_ui(s->ui) : NULL;
+}
+
 int oracle_session_status(oracle_session *s)
 {
     return s->g->status(s->cur);

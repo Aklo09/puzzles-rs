@@ -25,6 +25,7 @@ struct SessionC {
 unsafe extern "C" {
     static fifteen: GameC;
     static flip: GameC;
+    static guess: GameC;
     static nullgame: GameC;
 
     fn oracle_game_colours(g: *const GameC, out: *mut f32, max: c_int) -> c_int;
@@ -79,6 +80,7 @@ unsafe extern "C" {
     ) -> *mut c_char;
     fn oracle_session_text_format(s: *mut SessionC) -> *mut c_char;
     fn oracle_session_status(s: *mut SessionC) -> c_int;
+    fn oracle_session_encode_ui(s: *mut SessionC) -> *mut c_char;
     fn oracle_session_key_label(s: *mut SessionC, button: c_int) -> *const c_char;
     fn oracle_session_cursor(
         s: *mut SessionC,
@@ -140,6 +142,13 @@ impl CGame {
     pub fn flip() -> Self {
         // SAFETY: a constant struct defined by flip.c.
         Self(unsafe { &flip })
+    }
+
+    /// `guess.c`.
+    #[must_use]
+    pub fn guess() -> Self {
+        // SAFETY: a constant struct defined by guess.c.
+        Self(unsafe { &guess })
     }
 
     /// `nullgame.c`.
@@ -406,6 +415,12 @@ impl CSession {
     pub fn text_format(&mut self) -> Option<String> {
         // SAFETY: live session; NULL or a fresh string.
         unsafe { owned(oracle_session_text_format(self.ptr())) }
+    }
+
+    /// `encode_ui` of the UI, if the game has one.
+    pub fn encode_ui(&mut self) -> Option<String> {
+        // SAFETY: live session; NULL or a fresh string.
+        unsafe { owned(oracle_session_encode_ui(self.ptr())) }
     }
 
     /// `status` of the current state: 0, +1 or -1.

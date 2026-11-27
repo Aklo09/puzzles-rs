@@ -995,8 +995,14 @@ at the top.
     C copies the text. Files C writes re-save byte for byte.
   - `%g` of a NaN `TIME` is platform-dependent in C (`-nan` on glibc);
     Rust always writes `nan`.
+  - Guess: C submits on Enter with the cursor on the marking pegs even
+    when the guess is no longer complete, and its mid-end then aborts on
+    the rejected move; the port only shows the cursor there. With the
+    cursor on the marking pegs, C's `d` reads (and may write) past its
+    peg array; the port does nothing. As in C, keypad digits don't place
+    pegs, and with 10 colours `:` places colour 10.
 
-- **Phase 2: in progress.** Done:
+- **Phase 2: done** (2026-11-27):
   - core types (`button`, `config`, `preset`, `game` result types,
     `palette` + `palette!`, `drawing` with blitter handles,
     `Drawing` helpers, `NullDrawing`/`RecordingDrawing`, and
@@ -1082,7 +1088,24 @@ at the top.
     draw traces, palette parity); canvas snapshots and manual play come
     with the desktop app (Phase 3).
 
-  Next: Guess.
+  - Guess (`guess`): the first game with a colour series (Classic gains
+    `pieces` from it), saved UI (`encode_ui`/`decode_ui`), a runtime
+    preference toggle (`l`), the hint search and dragged pegs with a
+    blitter. It matches C for presets, parameter strings, descriptions
+    (both presets over 50 seeds, random parameters), mutated
+    descriptions, random play scripts with drags, right-clicks, digits
+    (`:` and keypad digits included), hints, labels and raw moves,
+    playing by hints, deleting pegs, the saved UI and `show-labels`
+    through both mid-ends, damaged UI lines, its corpus, palette parity
+    and upstream's `guess.sav`. The shared driver now also compares each
+    game's saved UI after every step, and accepts a port's answer where
+    C makes a move its own `execute_move` rejects (C's mid-end would
+    abort there).
+
+    Done bar: Flip, Fifteen and Guess pass everything that runs
+    headless; canvas snapshots and manual play come with the desktop app.
+
+  Next: Phase 3, the desktop front end.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

@@ -72,3 +72,8 @@ fn fifteen_corpus_is_cs() {
 fn flip_corpus_is_cs() {
     check("flip", CGame::flip());
 }
+
+#[test]
+fn guess_corpus_is_cs() {
+    check("guess", CGame::guess());
+}

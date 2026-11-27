@@ -69,3 +69,9 @@ fn fifteen() {
 fn flip() {
     insta::assert_snapshot!("flip", corpus::<puzzles_games::flip::Flip>());
 }
+
+#[cfg(feature = "guess")]
+#[test]
+fn guess() {
+    insta::assert_snapshot!("guess", corpus::<puzzles_games::guess::Guess>());
+}

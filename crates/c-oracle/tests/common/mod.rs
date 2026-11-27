@@ -167,7 +167,17 @@ impl<G: Game> Pair<G> {
             MoveResult::UiUpdate => CMoveResult::UiUpdate,
             MoveResult::Move(mv) => CMoveResult::Move(encode::<G>(mv)),
         };
-        prop_assert_eq!(&r_text, &c, "interpret_move({}, {}, {:?})", x, y, button);
+        if let (MoveResult::UiUpdate | MoveResult::NoEffect, CMoveResult::Move(text)) = (&r, &c) {
+            // A move C's own execute_move rejects would abort C's mid-end
+            // (it asserts on it); a port may do anything else there.
+            prop_assert!(
+                !self.c.execute(text),
+                "C made a move the port didn't: {}",
+                text
+            );
+        } else {
+            prop_assert_eq!(&r_text, &c, "interpret_move({}, {}, {:?})", x, y, button);
+        }
         match r {
             MoveResult::Move(mv) => self.play(&mv),
             MoveResult::UiUpdate => {
@@ -261,6 +271,7 @@ impl<G: Game> Pair<G> {
         let cursor = G::cursor_location(&self.rust.ui, &self.rust.ds, &self.rust.cur, params)
             .map(|r| (r.x, r.y, r.w, r.h));
         prop_assert_eq!(cursor, self.c.cursor(), "cursor location");
+        prop_assert_eq!(G::encode_ui(&self.rust.ui), self.c.encode_ui(), "saved UI");
         Ok(())
     }
 

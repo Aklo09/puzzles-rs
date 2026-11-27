@@ -19,6 +19,7 @@ fn c_fuzzpuzz(data: &[u8]) -> Result<Vec<u8>, String> {
     let game = match c_identify_game(data)?.as_str() {
         "Fifteen" => CGame::fifteen(),
         "Flip" => CGame::flip(),
+        "Guess" => CGame::guess(),
         _ => return Err("Game not recognised".into()),
     };
     let mut c = CMidend::new(game, b"roundtrip", true);
@@ -38,7 +39,7 @@ fn rust(data: &[u8]) -> Result<Vec<u8>, String> {
 fn upstream_saves_round_trip_like_fuzzpuzz() {
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../third_party/puzzles-c/icons");
-    for name in ["fifteen.sav", "flip.sav"] {
+    for name in ["fifteen.sav", "flip.sav", "guess.sav"] {
         let data = std::fs::read(dir.join(name)).expect("an icon save file");
         let out = rust(&data);
         assert_eq!(out, c_fuzzpuzz(&data), "{name}");
