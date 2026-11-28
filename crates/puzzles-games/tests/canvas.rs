@@ -11,7 +11,12 @@
 //! PNGs in `tests/snapshots/canvas/`. A failing test writes
 //! `<name>.new.png` next to the snapshot.
 
-#![cfg(all(feature = "fifteen", feature = "flip", feature = "guess"))]
+#![cfg(all(
+    feature = "fifteen",
+    feature = "flip",
+    feature = "guess",
+    feature = "mosaic"
+))]
 
 use std::path::PathBuf;
 
@@ -195,12 +200,41 @@ fn guess() {
     check("guess-labels", &scene.canvas);
 }
 
+#[test]
+fn mosaic() {
+    let mut scene = Scene::id("Mosaic", "6x6#1");
+    check("mosaic-start", &scene.canvas);
+    // At 32 pixels, square (x, y) starts at (16 + 32x, 16 + 32y).
+    let at = |x: i32, y: i32| (16 + 32 * x + 10, 16 + 32 * y + 10);
+    let mouse = |b, a| Button::mouse(b, a);
+    let (x, y) = at(0, 0);
+    scene.click(x, y);
+    let (x, y) = at(1, 0);
+    scene.press(x, y, mouse(MouseButton::Right, MouseAction::Press));
+    scene.press(x, y, mouse(MouseButton::Right, MouseAction::Release));
+    // A white drag along the third row, and one black down a column.
+    for (b, from, to) in [
+        (MouseButton::Right, at(0, 2), at(4, 2)),
+        (MouseButton::Left, at(5, 1), at(5, 5)),
+    ] {
+        scene.press(from.0, from.1, mouse(b, MouseAction::Press));
+        scene.press(to.0, to.1, mouse(b, MouseAction::Drag));
+        scene.press(to.0, to.1, mouse(b, MouseAction::Release));
+    }
+    // The keyboard cursor, moved to the second row.
+    scene.press(0, 0, Button::cursor(CursorKey::Select));
+    scene.press(0, 0, Button::cursor(CursorKey::Down));
+    check("mosaic-marked", &scene.canvas);
+    // Upstream's icon: satisfied clues in grey, one in error.
+    check("mosaic-icon", &Scene::icon("Mosaic", 1.0).canvas);
+}
+
 /// Every game in the app's own themes: upstream's icon positions, which
 /// show most of each game's colours.
 #[test]
 fn themes() {
     for theme in ["light", "dark"] {
-        for game in ["Flip", "Fifteen", "Guess"] {
+        for game in ["Flip", "Fifteen", "Guess", "Mosaic"] {
             let scene = Scene::icon_in(theme, game, 1.0);
             check(&format!("{}-{theme}", game.to_lowercase()), &scene.canvas);
         }

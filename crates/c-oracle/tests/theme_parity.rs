@@ -46,6 +46,11 @@ fn ported() -> Vec<(&'static str, &'static [PaletteEntry], CGame)> {
             CGame::guess(),
         ),
         (
+            puzzles_games::mosaic::Mosaic::NAME,
+            puzzles_games::mosaic::Mosaic::PALETTE,
+            CGame::mosaic(),
+        ),
+        (
             puzzles_games::nullgame::NullGame::NAME,
             puzzles_games::nullgame::NullGame::PALETTE,
             CGame::nullgame(),
