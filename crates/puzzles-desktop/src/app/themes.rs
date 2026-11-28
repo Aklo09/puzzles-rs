@@ -1,10 +1,14 @@
 //! The built-in themes plus the user's, `themes/*.toml` in the app's
-//! folder (themes decision in `docs/porting-plan.md`). A broken file is
-//! skipped and reported; a file can't replace a built-in theme.
+//! folder (themes decision in `docs/porting-plan.md`; how to write one:
+//! `docs/themes.md`). A broken file is skipped and reported; a file can't
+//! replace a built-in theme. Keys in a file's game sections that colour
+//! nothing (an unknown game or colour) are reported, and the theme is
+//! used without them.
 
 use std::path::{Path, PathBuf};
 
-use puzzles_theme::{Theme, ThemeSet};
+use puzzles_core::palette::PaletteEntry;
+use puzzles_theme::{Theme, ThemeSet, unused_game_keys};
 
 /// All themes, and problems with the user's files.
 #[derive(Debug, Clone)]
@@ -45,7 +49,16 @@ impl Themes {
                         theme.name
                     ));
                 }
-                Ok(theme) => set.insert(theme),
+                Ok(theme) => {
+                    let games: Vec<(&str, &[PaletteEntry])> = puzzles_games::GAMES
+                        .iter()
+                        .map(|g| (g.name, g.palette))
+                        .collect();
+                    for unused in unused_game_keys(&theme, &games) {
+                        errors.push(format!("{file}: {unused}"));
+                    }
+                    set.insert(theme);
+                }
                 Err(e) => errors.push(format!("{file}: {e}")),
             }
         }
@@ -58,7 +71,8 @@ impl Themes {
         &self.set
     }
 
-    /// Problems with the user's theme files.
+    /// Problems with the user's theme files: files that weren't loaded,
+    /// and keys in loaded ones that colour nothing.
     #[must_use]
     pub fn errors(&self) -> &[String] {
         &self.errors
@@ -118,17 +132,32 @@ mod tests {
             "name = \"Bad\"\n[roles]\nnope = \"red\"\n",
         )
         .unwrap();
+        std::fs::write(
+            dir.join("e.toml"),
+            "name = \"Typo\"\n[game.flip.overrides]\ndone = \"red\"\n",
+        )
+        .unwrap();
         std::fs::write(dir.join("notes.txt"), "not a theme").unwrap();
         let themes = Themes::load(Some(&dir));
         assert_eq!(
             themes.names(None),
-            ["Classic", "Light", "Dark", "Night", "Sepia"]
+            ["Classic", "Light", "Dark", "Night", "Sepia", "Typo"]
         );
         assert_eq!(themes.names(Some(true)), ["Dark", "Night"]);
-        assert_eq!(themes.names(Some(false)), ["Classic", "Light", "Sepia"]);
-        assert_eq!(themes.errors().len(), 2, "{:?}", themes.errors());
+        assert_eq!(
+            themes.names(Some(false)),
+            ["Classic", "Light", "Sepia", "Typo"]
+        );
+        assert_eq!(themes.errors().len(), 3, "{:?}", themes.errors());
         assert!(themes.errors()[0].starts_with("c.toml: \"Dark\" is a built-in"));
         assert!(themes.errors()[1].starts_with("d.toml: "));
+        // Loaded, with the key that colours nothing reported.
+        assert!(
+            themes.errors()[2]
+                .starts_with("e.toml: game.flip.overrides.done: Flip has no colour called that"),
+            "{:?}",
+            themes.errors()
+        );
         assert_eq!(Themes::load(None).errors(), &[] as &[String]);
         std::fs::remove_dir_all(&dir).unwrap();
     }

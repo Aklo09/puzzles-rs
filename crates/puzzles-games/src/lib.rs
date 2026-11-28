@@ -24,6 +24,7 @@ pub mod unruly;
 use puzzles_core::erased::Puzzle;
 use puzzles_core::game::Game;
 use puzzles_core::midend::{Midend, MidendOptions};
+use puzzles_core::palette::PaletteEntry;
 
 /// A game in the registry.
 #[derive(Clone, Copy, Debug)]
@@ -36,6 +37,9 @@ pub struct GameInfo {
     /// What the player has to do, in one sentence (upstream's
     /// `OBJECTIVE`).
     pub objective: &'static str,
+    /// The game's colours (its `Game::PALETTE`), for checking themes
+    /// without a mid-end.
+    pub palette: &'static [PaletteEntry],
     new: fn(&[u8], bool, MidendOptions) -> Box<dyn Puzzle>,
 }
 
@@ -45,6 +49,7 @@ impl GameInfo {
             name: G::NAME,
             description,
             objective,
+            palette: G::PALETTE,
             new: |seed, interactive, options| {
                 Box::new(Midend::<G>::new(seed, interactive, options))
             },

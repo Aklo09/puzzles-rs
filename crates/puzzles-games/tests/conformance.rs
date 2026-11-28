@@ -171,3 +171,69 @@ fn nullgame() {
 fn unruly() {
     check::<puzzles_games::unruly::Unruly>();
 }
+
+/// The built-in themes colour only what exists: every key in their game
+/// sections names a game in the registry and one of its colours.
+#[test]
+fn built_in_themes_have_no_unused_game_keys() {
+    let games: Vec<(&str, &[puzzles_core::palette::PaletteEntry])> = puzzles_games::GAMES
+        .iter()
+        .map(|g| (g.name, g.palette))
+        .collect();
+    let set = puzzles_theme::ThemeSet::builtin();
+    for name in set.names() {
+        let theme = set.get(&name).expect("listed");
+        let unused = puzzles_theme::unused_game_keys(theme, &games);
+        assert!(unused.is_empty(), "{name}: {unused:?}");
+    }
+}
+
+/// A game's colour table in `docs/themes.md`: each palette entry's key
+/// and where its colour comes from.
+fn theme_doc_table(name: &str, palette: &[puzzles_core::palette::PaletteEntry]) -> String {
+    use std::fmt::Write as _;
+
+    use puzzles_core::palette::{ColourSpec as S, DeriveOp as D};
+    let key = |i: usize| format!("`{}`", palette[i].key());
+    let mut out = format!("### {name}\n\n| Colour | Default |\n|---|---|\n");
+    for entry in palette {
+        let source = match entry.spec {
+            S::Role(role) => format!("role `{}`", puzzles_theme::role_key(role)),
+            S::Series(series, n) => format!(
+                "series `{}`, colour {}",
+                puzzles_theme::series_key(series),
+                n + 1
+            ),
+            S::Specific(_) => format!("its own, under `[game.{}]`", puzzles_theme::game_key(name)),
+            S::Derived { base, op } => match op {
+                D::Shade(f) => format!("{} × {f}", key(base.0)),
+                D::Mix { with, t } => format!("{} mixed with {} ({t})", key(base.0), key(with.0)),
+                D::Highlight => format!("bevel highlight of {}", key(base.0)),
+                D::Lowlight => format!("bevel lowlight of {}", key(base.0)),
+            },
+        };
+        let _ = writeln!(out, "| `{}` | {source} |", entry.key());
+    }
+    out
+}
+
+/// `docs/themes.md` lists every game's colours as they are.
+#[test]
+fn theme_doc_lists_every_games_colours() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/themes.md");
+    let doc = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
+    let mut missing = String::new();
+    for g in puzzles_games::GAMES {
+        let table = theme_doc_table(g.name, g.palette);
+        if !doc.contains(&table) {
+            missing += &table;
+            missing += "\n";
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "docs/themes.md is missing or has outdated game tables; it should contain:\n\n{missing}"
+    );
+}
