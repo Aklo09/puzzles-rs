@@ -57,7 +57,19 @@ pub struct ToolbarState {
     pub full_screen: bool,
     /// True in immersive mode.
     pub immersive: bool,
+    /// The window's width, in points: below [`COMPACT_BELOW`] the menus
+    /// show their icons alone.
+    pub width: f32,
 }
+
+/// Below this window width, in points, the toolbar is compact: the Type,
+/// Game and zoom menus show their icons alone (names in tooltips), so the
+/// whole toolbar fits down to the window's minimum width.
+pub const COMPACT_BELOW: f32 = 560.0;
+
+/// The window's minimum width, in points: the compact toolbar's, with
+/// its margins.
+pub const MIN_WINDOW_WIDTH: f32 = 420.0;
 
 /// An icon button. The icon is a private-use character, so the button
 /// is named `label` for screen readers (and UI tests).
@@ -90,6 +102,7 @@ pub fn contents(
     state: &ToolbarState,
 ) -> Option<ToolbarAction> {
     let mac = state.mac;
+    let compact = state.width < COMPACT_BELOW;
     let mut clicked = None;
     ui.horizontal(|ui| {
         for tool in TOOLS {
@@ -105,10 +118,10 @@ pub fn contents(
                             session.use_presets_file(file);
                         }
                     };
-                    if let Some(a) = menus::type_menu(ui, session, opened) {
+                    if let Some(a) = menus::type_menu(ui, session, compact, opened) {
                         clicked = Some(ToolbarAction::Menu(a));
                     }
-                    if let Some(a) = menus::game_menu(ui, session, mac) {
+                    if let Some(a) = menus::game_menu(ui, session, mac, compact) {
                         clicked = Some(ToolbarAction::Menu(a));
                     }
                     if settings_button(ui).clicked() {
@@ -116,7 +129,8 @@ pub fn contents(
                     }
                 }
                 Tool::Zoom => {
-                    if let Some(c) = menus::zoom_menu(ui, state.zoom.0, state.zoom.1, mac) {
+                    let (zoom, can_zoom_in) = state.zoom;
+                    if let Some(c) = menus::zoom_menu(ui, zoom, can_zoom_in, mac, compact) {
                         clicked = Some(ToolbarAction::Command(c));
                     }
                 }

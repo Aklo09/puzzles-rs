@@ -16,7 +16,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default()
             .with_title("Puzzles")
             .with_inner_size([720.0, 640.0])
-            .with_min_inner_size([320.0, 240.0]),
+            .with_min_inner_size([ui::MIN_WINDOW_WIDTH, 240.0]),
         // The window's place, kept by eframe (persistence decision).
         persistence_path: dirs.as_ref().map(app::paths::AppDirs::app_state),
         ..eframe::NativeOptions::default()

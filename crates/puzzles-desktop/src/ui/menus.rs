@@ -30,8 +30,9 @@ pub enum MenuAction {
     Command(Command),
 }
 
-/// A toolbar menu button: an icon and a label.
-fn menu_title(glyph: &str, label: &str) -> egui::text::LayoutJob {
+/// A toolbar menu button: an icon and a label, or the icon alone when
+/// the toolbar is compact (see [`named`]).
+fn menu_title(glyph: &str, label: Option<&str>) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     RichText::new(glyph)
         .size(18.0)
@@ -42,13 +43,22 @@ fn menu_title(glyph: &str, label: &str) -> egui::text::LayoutJob {
             egui::FontSelection::Default,
             egui::Align::Center,
         );
-    RichText::new(format!(" {label}")).append_to(
-        &mut job,
-        &egui::Style::default(),
-        egui::FontSelection::Default,
-        egui::Align::Center,
-    );
+    if let Some(label) = label {
+        RichText::new(format!(" {label}")).append_to(
+            &mut job,
+            &egui::Style::default(),
+            egui::FontSelection::Default,
+            egui::Align::Center,
+        );
+    }
     job
+}
+
+/// Names a menu button shown as its icon alone: a tooltip, and the name
+/// screen readers (and UI tests) use.
+fn named(response: &egui::Response, name: &str) {
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+    let _ = response.clone().on_hover_text(name);
 }
 
 fn presets(
@@ -83,10 +93,12 @@ fn presets(
 pub fn type_menu(
     ui: &mut egui::Ui,
     session: &mut Session,
+    compact: bool,
     opened: impl FnOnce(&mut Session),
 ) -> Option<MenuAction> {
     let mut action = None;
-    let response = ui.menu_button(menu_title(icon::SLIDERS_HORIZONTAL, "Type"), |ui| {
+    let label = (!compact).then_some("Type");
+    let response = ui.menu_button(menu_title(icon::SLIDERS_HORIZONTAL, label), |ui| {
         ui.set_min_width(180.0);
         let current = session.current_preset();
         let can_configure = session.capabilities().can_configure;
@@ -113,6 +125,9 @@ pub fn type_menu(
             }
         }
     });
+    if compact {
+        named(&response.response, "Type");
+    }
     if response.response.clicked() {
         opened(session);
     }
@@ -120,9 +135,15 @@ pub fn type_menu(
 }
 
 /// The Game menu. `mac` picks how shortcuts are written.
-pub fn game_menu(ui: &mut egui::Ui, session: &Session, mac: bool) -> Option<MenuAction> {
+pub fn game_menu(
+    ui: &mut egui::Ui,
+    session: &Session,
+    mac: bool,
+    compact: bool,
+) -> Option<MenuAction> {
     let mut action = None;
-    ui.menu_button(menu_title(icon::HASH, "Game"), |ui| {
+    let label = (!compact).then_some("Game");
+    let response = ui.menu_button(menu_title(icon::HASH, label), |ui| {
         ui.set_min_width(180.0);
         for command in [Command::Save, Command::Load] {
             let button = egui::Button::new(command.label())
@@ -178,14 +199,28 @@ pub fn game_menu(ui: &mut egui::Ui, session: &Session, mac: bool) -> Option<Menu
             );
         }
     });
+    if compact {
+        named(&response.response, "Game");
+    }
     action
 }
 
 /// The zoom menu, titled with the zoom applied (`zoom` over fit to
-/// window): zoom in, zoom out, fit to window.
-pub fn zoom_menu(ui: &mut egui::Ui, zoom: f32, can_zoom_in: bool, mac: bool) -> Option<Command> {
+/// window), or the icon alone when compact: zoom in, zoom out, fit to
+/// window.
+pub fn zoom_menu(
+    ui: &mut egui::Ui,
+    zoom: f32,
+    can_zoom_in: bool,
+    mac: bool,
+    compact: bool,
+) -> Option<Command> {
     let mut chosen = None;
-    let title = menu_title(icon::MAGNIFYING_GLASS, &Zoom::percent(zoom));
+    let percent = Zoom::percent(zoom);
+    let title = menu_title(
+        icon::MAGNIFYING_GLASS,
+        (!compact).then_some(percent.as_str()),
+    );
     let response = ui.menu_button(title, |ui| {
         ui.set_min_width(180.0);
         let zoomed = zoom > 1.0;
@@ -202,8 +237,6 @@ pub fn zoom_menu(ui: &mut egui::Ui, zoom: f32, can_zoom_in: bool, mac: bool) -> 
             }
         }
     });
-    response
-        .response
-        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Zoom"));
+    named(&response.response, &format!("Zoom ({percent})"));
     chosen
 }
