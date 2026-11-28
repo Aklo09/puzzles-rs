@@ -1,6 +1,6 @@
 //! The app's settings, `settings.toml` in the app's folder (themes
-//! decision in `docs/porting-plan.md`): the theme choices and the game
-//! last open. The window's place is eframe's, in `app.ron`. Unknown keys are ignored and missing
+//! decision in `docs/porting-plan.md`): the theme choices, the game
+//! last open and immersive mode. The window's place is eframe's, in `app.ron`. Unknown keys are ignored and missing
 //! ones take their defaults, so older and newer files both load.
 
 use std::path::Path;
@@ -24,6 +24,8 @@ pub struct Settings {
     /// The game open when the app last ran, reopened at launch; `None`
     /// for the game list.
     pub last_game: Option<String>,
+    /// Immersive mode: no toolbar or status bar around the puzzle.
+    pub immersive: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +36,7 @@ impl Default for Settings {
             light_theme: "Light".to_owned(),
             dark_theme: "Dark".to_owned(),
             last_game: None,
+            immersive: false,
         }
     }
 }

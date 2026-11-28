@@ -2,6 +2,7 @@
 //! (`docs/porting-plan.md` §4, testability rule).
 
 pub mod command;
+pub mod immersive;
 pub mod layout;
 pub mod paths;
 pub mod save_file;
@@ -10,3 +11,4 @@ pub mod settings;
 pub mod themes;
 pub mod user_presets;
 pub mod watch;
+pub mod zoom;

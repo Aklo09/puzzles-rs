@@ -403,6 +403,31 @@ fn screenshots() {
     h.input_mut().hovered_files.clear();
     h.run_steps(2);
 
+    // Zoomed, the zoom menu, immersive mode.
+    for _ in 0..3 {
+        h.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+        h.run_steps(2);
+    }
+    h.run();
+    save(&mut h, "flip-zoomed");
+    h.get_by_label("Zoom").click();
+    h.run();
+    save(&mut h, "menu-zoom");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num0);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+    h.run_steps(2);
+    h.state_mut().reveal.hide();
+    h.event(Event::PointerMoved(Pos2::new(360.0, 400.0)));
+    h.run();
+    save(&mut h, "flip-immersive");
+    h.event(Event::PointerMoved(Pos2::new(360.0, 4.0)));
+    h.run_steps(2);
+    save(&mut h, "flip-immersive-toolbar");
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+    h.run_steps(2);
+
     // The same in Dark, as when the system is dark.
     h.input_mut().system_theme = Some(egui::Theme::Dark);
     h.run_steps(3);
@@ -986,5 +1011,121 @@ fn dropped_saved_games_open_in_their_game() {
         "{}",
         session(&h).status_line()
     );
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}
+
+/// The middle of a rectangle, as a fraction of it, of `point`.
+fn fraction(rect: egui::Rect, point: Pos2) -> egui::Vec2 {
+    (point - rect.min) / rect.size()
+}
+
+#[test]
+fn the_puzzle_zooms_and_scrolls() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    let fit = puzzle_rect(&h);
+
+    // Keys zoom around the middle of the view, crisp (redrawn larger).
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
+    h.run_steps(3);
+    let zoomed = puzzle_rect(&h);
+    let ratio = zoomed.width() / fit.width();
+    assert!((1.15..1.3).contains(&ratio), "a step: {ratio}");
+    assert!(
+        (zoomed.center() - fit.center()).length() < 2.0,
+        "{zoomed:?}"
+    );
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Minus);
+    h.run_steps(3);
+    assert_eq!(puzzle_rect(&h), fit, "back to fit");
+
+    // Pinch (or Cmd/Ctrl+wheel) keeps the point under the pointer.
+    let pointer = fit.min + fit.size() * egui::vec2(0.3, 0.4);
+    h.event(Event::PointerMoved(pointer));
+    h.event(Event::Zoom(3.0));
+    h.run_steps(3);
+    let pinched = puzzle_rect(&h);
+    assert!(pinched.width() > fit.width() * 2.5);
+    let (before, after) = (fraction(fit, pointer), fraction(pinched, pointer));
+    assert!((before - after).length() < 0.01, "{before:?} vs {after:?}");
+
+    // Larger than the view: the wheel scrolls it, and clicks still play.
+    h.event(Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Point,
+        delta: egui::vec2(0.0, -60.0),
+        modifiers: Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    h.run_steps(20);
+    let scrolled = puzzle_rect(&h);
+    assert!(scrolled.min.y < pinched.min.y - 30.0, "{scrolled:?}");
+    click(&mut h, pointer);
+    assert!(session(&h).can(Command::Undo), "the click made a move");
+
+    // The zoom survives a new game; Cmd/Ctrl+0 fits again.
+    h.key_press_modifiers(Modifiers::COMMAND, Key::N);
+    h.step();
+    wait_for_game(&mut h);
+    assert!(puzzle_rect(&h).width() > fit.width() * 2.5);
+    h.key_press_modifiers(Modifiers::COMMAND, Key::Num0);
+    h.run_steps(3);
+    assert_eq!(puzzle_rect(&h).size(), fit.size());
+}
+
+fn toolbar_showing(h: &Harness<'_, PuzzlesApp>) -> bool {
+    h.query_by_label("Undo").is_some()
+}
+
+#[test]
+fn immersive_mode_hides_the_chrome_until_wanted() {
+    let dirs = test_dirs("immersive");
+    let mut h = app_with(dirs.clone());
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    let framed = puzzle_rect(&h);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+    h.run_steps(3);
+    assert!(h.state().settings.immersive);
+    assert!(
+        std::fs::read_to_string(dirs.settings())
+            .unwrap()
+            .contains("immersive = true")
+    );
+    assert!(toolbar_showing(&h), "shown for a moment on entering");
+    assert!(
+        puzzle_rect(&h).height() > framed.height(),
+        "the puzzle takes the room"
+    );
+    assert!(
+        h.query_by_label_contains("Moves").is_some(),
+        "status overlay"
+    );
+
+    h.state_mut().reveal.hide();
+    h.run_steps(2);
+    assert!(!toolbar_showing(&h));
+    // The pointer at the top edge brings it back...
+    h.event(Event::PointerMoved(Pos2::new(300.0, 4.0)));
+    h.run_steps(2);
+    assert!(toolbar_showing(&h));
+    // ...and so does Escape, which Flip doesn't use.
+    h.event(Event::PointerMoved(Pos2::new(300.0, 300.0)));
+    h.state_mut().reveal.hide();
+    h.run_steps(2);
+    assert!(!toolbar_showing(&h));
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    assert!(toolbar_showing(&h));
+
+    // Remembered at the next launch; the shortcut leaves it.
+    drop(h);
+    let mut h = app_with(dirs.clone());
+    wait_for_game(&mut h);
+    assert!(h.state().settings.immersive);
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+    h.run_steps(3);
+    assert!(!h.state().settings.immersive && toolbar_showing(&h));
+    assert_eq!(puzzle_rect(&h).height(), framed.height());
     let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
 }

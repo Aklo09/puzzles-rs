@@ -42,6 +42,7 @@ summarises them all.
 | — | Custom dialog field order | **Decided** 2026-11-27 | Every Custom dialog lists Width before Height. In C only Mosaic lists Height first; its port swaps the two in `configure` and `custom_params`, and its parity test swaps C's items before comparing, with a comment. A UI difference only: game IDs, save files and generated puzzles are unaffected. Rejected: the front end reordering fields by their (English) labels, a heuristic that localisation would break |
 | — | Themes in the app | **Decided** 2026-11-27 | (a) **Light** is a new flat theme (near-white background, soft greys, bevels close to the background, muted accents); Classic stays C's exact look. Rejected: Light as another name for Classic. (b) A dark theme must define every role and series (lint test). Colours it doesn't define itself, a game's `Specific` values and `Derived` entries, are computed as in the nearest light theme it extends, then **mirrored around the background in OKLab**: lightness maps piecewise linearly through (0 → 1), (light background → dark background), (1 → 0), hue and chroma kept, clamped to sRGB. Series are never mirrored. Poor results get per-game overrides after reviewing the snapshots. Rejected: adapting only `Specific` values and deriving from the dark values directly (Flip's "wrong" tiles, background × 1/3, would be near-black on a dark background). (c) One **Settings…** dialog (gear icon in the toolbar and the library): Appearance (theme: Follow system, Classic, Light, Dark and user themes; under Follow system, the light and the dark theme to use) and, with a game open, that game's preferences; Game ▸ Preferences… opens it too. Rejected: a separate Appearance menu. (d) `settings.toml` starts now with the theme choices; PR 6 adds window state and the rest. Rejected: forgetting the choice until PR 6. (e) User themes are `themes/*.toml` in the app folder, watched with `notify` and applied live. Rejected: polling modification times every second (idle wake-ups). Also: egui's colours start from its light or dark style by the theme's `dark` flag, with panels from the theme's background, text from ink and selection from `selected`, and an optional `[ui]` section overriding them; the lint test requires 4.5:1 contrast against the background for ink, clue and user entry, 3:1 for error and grid |
 | — | Persistence | **Decided** 2026-11-27 | (a) **Window state** is eframe's: its `persistence` feature with `persistence_path` = `app.ron` in the app folder, which restores size, position, maximised and full-screen and moves the window back on screen if its monitor is gone; egui's own memory isn't kept. The file dialogs' folders live there too. Rejected: size and position in `settings.toml` (the app can't check monitors before the window exists, so a window could open off-screen); size only (the window doesn't return to its place). (b) **Session restore** keeps every game: `sessions/<game>.sav` in the app folder (a C save file); opening a game from the library resumes it, and `settings.toml`'s `last_game` reopens the last screen (a game or the library) at launch. A finished game resumes as it is; a file that won't load starts a new game and says why. Rejected: the last game only; Linux's XDG state folder (one app folder on every OS). (c) A session is written about a second after the game changes (moves, undo, new game, solve, restart, loading, preferences; the timer alone doesn't count), when the app leaves the game and on exit; a crash loses at most that second. Rejected: only on leaving and exit; eframe's 30-second save hook. (d) **Save…** and **Load…** in the Game menu (Cmd/Ctrl+S, Cmd/Ctrl+O; Load also in the library) open `egui-file-dialog` dialogs listing `.sav` files, starting in Documents. Being in-process, the dialog makes macOS ask once per protected folder (Documents, Desktop, Downloads) to let the app in; accepted, since a packaged app remembers the answer. Rejected: starting in the home folder (saves would land there by default, and the sidebar folders still ask); native dialogs on macOS only. Loading another game's file switches to that game and becomes its session; a file dropped on the window or named on the command line (`puzzles game.sav`) does the same. Files over 16 MiB are refused. Rejected: native dialogs (`rfd`): not themed, and UI tests can't drive them. macOS's "Open With" (Apple events) comes with packaging |
+| — | Full screen, immersive, zoom | **Decided** 2026-11-27 | (a) **Full screen** (F11 on Windows and Linux, Ctrl+Cmd+F on macOS) and **immersive mode** (Cmd/Ctrl+Shift+F) are independent toggles, each with a toolbar button; immersive works in a window too. eframe remembers full screen (`app.ron`), `settings.toml` immersive mode. Rejected: immersive implying full screen; immersive only in full screen. (b) Immersive mode hides the toolbar and status bar; the toolbar comes back over the puzzle while the pointer is near the top edge or over it, while a menu or dialog is open, and for 1.5 s after the immersive shortcut or an Escape the game didn't use (the mid-end's `Unused`: Filling, Pearl and Rect keep Escape to cancel); the status line is a quiet overlay that clicks pass through. In macOS full screen, where the top of the screen shows the system's menu bar and title bar over the window, the toolbar and its band sit 32 points lower. Rejected: Escape always to the toolbar; never. (c) **Zoom** is a factor over fit to window, 1× to 4× in steps of 1.25× (Cmd/Ctrl with = or +, -, 0; a zoom menu showing the percentage), and pinch or Cmd/Ctrl+wheel around the pointer. The puzzle is laid out again in the larger area, so the game redraws it crisp; canvas sides are capped at 4096 pixels and the GPU's largest texture. The zoom stays over New Game and resets when the game changes; it isn't saved. egui's own keyboard UI zoom is off. Rejected: zooming below fit; scaling the texture. (d) **Panning**: the wheel, trackpad and solid scroll bars beside the puzzle (never over it, so clicks on them don't reach the game); every mouse button stays the game's. Rejected: Space-drag (Space is a cursor key in many games); a hand tool |
 
 ---
 
@@ -450,7 +451,8 @@ persistence, and input mapping. `ui/` stays thin.
 * **Aspect handling:** the puzzle is centred, and the surrounding area is
   filled with the theme's background so letterboxing is invisible.
 * **Zoom:** "fit to window" by default, plus Ctrl/Cmd `+`/`-`/`0` and
-  Ctrl+wheel for manual zoom with scrolling/panning when larger than the window.
+  Ctrl+wheel for manual zoom with scrolling/panning when larger than the
+  window (details in the full-screen, immersive and zoom decision).
 * **Per-monitor DPI changes** (dragging between screens) trigger a re-layout.
 * Window size, position, maximised and full-screen state are remembered
   per game.
@@ -606,7 +608,8 @@ filter on canvas pixels, which mangles meaning (red errors turn cyan).
   Uses `ViewportCommand::Fullscreen`.
 * **Focus/immersive mode**: hides all chrome. The puzzle is maximised; a
   translucent toolbar appears on mouse movement near the top edge or on
-  Esc and auto-hides. The status bar and timer become a subtle overlay.
+  Esc (when the game doesn't use it) and auto-hides. The status bar and
+  timer become a subtle overlay. Independent of full screen (decision log).
 * **Reduced motion** *(after release 1)*: respect the user setting by
   shortening or skipping animations and flashes (`anim_length`/`flash_length`
   scaled in the front end, not in the games).
@@ -1258,7 +1261,34 @@ at the top.
     user to allow the app into that folder, which the system's own
     panels never do.
 
-  Next: `ui/fullscreen`: full-screen, immersive mode, zoom and pan.
+  - full screen, immersive mode, zoom and pan (`ui/fullscreen`): the
+    toolbar is now a list of tools in `ui/toolbar.rs`, drawn as a panel
+    or, in immersive mode, over the puzzle while revealed (`app/immersive`
+    times it); the zoom menu, full-screen and immersive buttons join it.
+    `app/zoom` holds the zoom factor, the capped layout area and the
+    scroll offset that keeps the point under the pointer in place; the
+    puzzle view lays the game out in the zoomed area and shows it in a
+    scroll area, still on whole physical pixels. `Outcome::Unused` passes
+    the mid-end's `Unused` up, so Escape reveals the toolbar only when
+    the game has no use for it. Unit tests cover zoom steps and caps,
+    anchoring, the reveal timer, and each OS's shortcuts matched through
+    egui (Ctrl+Cmd+F vs Cmd+Shift+F, = and + for zoom in); UI tests zoom
+    by keys and pinch, scroll, play while zoomed, keep the zoom over New
+    Game, and enter, reveal and leave immersive mode across launches.
+    The screenshots found egui's scroll-area edge fade dimming the
+    zoomed puzzle; it is off. The real-window check (macOS, computer use)
+    confirmed full screen restored at launch, left by the toolbar button
+    and entered with Ctrl+Cmd+F (native Spaces), immersive mode with the
+    status overlay, Escape revealing the toolbar in Fifteen, crisp zoom
+    and wheel scrolling. It found that in macOS full screen the pointer
+    at the top of the screen brings macOS's menu bar and title bar,
+    which cover the top of the window, so the toolbar never came back.
+    In macOS full screen the toolbar now shows below that title bar and
+    the band that reveals it moves down with it (`immersive::Band`);
+    rechecked in the real window.
+
+  Next: manual play of Flip, Fifteen and Guess on two OSes, which closes
+  Phase 3.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
