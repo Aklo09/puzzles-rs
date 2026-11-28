@@ -689,11 +689,15 @@ impl PuzzlesApp {
         }
         let visuals = &ctx.global_style().visuals;
         let fill = visuals.panel_fill.gamma_multiply(0.8);
+        // An area's room is its size last frame, so a longer line would
+        // wrap to the width of a shorter one: give it the window's width.
+        let room = (ctx.content_rect().width() - 32.0).max(80.0);
         egui::Area::new(egui::Id::new("status-overlay"))
             .anchor(Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0))
             .order(egui::Order::Foreground)
             .interactable(false)
             .show(ctx, |ui| {
+                ui.set_max_width(room);
                 Frame::new()
                     .fill(fill)
                     .corner_radius(4)
