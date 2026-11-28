@@ -1355,8 +1355,28 @@ at the top.
     - Generation in a debug build is slow for 25 × 25 (about 1.6 s per
       puzzle, 0.1 s in release), so the corpus test takes about 16 s.
 
+  - Unruly (`unruly`): matches C for presets, parameter strings (unknown
+    difficulty letters by verdict only: C's `encode_params` reads past
+    its letter table for one), the Custom dialog through both mid-ends,
+    descriptions (presets, random sizes up to 12 × 12 in every difficulty
+    and unique-rows mode), mutated descriptions, random play scripts
+    (every mouse button and key Unruly takes, with modifiers, which it
+    strips; solver calls, raw place and solve strings, junk) with every
+    flash frame, winning by clicks, its corpus, palette parity and
+    upstream's `unruly.sav` through `fuzzpuzz`. The solver's reasoning
+    (C's `STANDALONE_SOLVER` output) goes to a `SolverLog` through the
+    public `unruly::solve` and `unruly::generate`; its text is compared
+    with C's in Phase 6. Palette: the two square colours are the
+    `Binary` series (Classic gets C's, white being C's 0.95 moved to
+    0.83 by `game_mkhighlight_specific`; Light and Dark define their
+    own), their bevels `Derived` highlights and lowlights, empty squares
+    `Specific`. In C the bevel colours are also the completion flash's
+    two frames; kept so (decided 2026-11-28: the flash isn't worth
+    entries of its own). Canvas snapshots in Classic, Light and Dark.
+    Desktop play on two OSes is still to do.
+
   Next in Phase 4a: sixteen, twiddle, flood, pegs, samegame, blackbox,
-  netslide, cube, inertia, unruly.
+  netslide, cube, inertia.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

@@ -15,7 +15,8 @@
     feature = "fifteen",
     feature = "flip",
     feature = "guess",
-    feature = "mosaic"
+    feature = "mosaic",
+    feature = "unruly"
 ))]
 
 use std::path::PathBuf;
@@ -229,12 +230,35 @@ fn mosaic() {
     check("mosaic-icon", &Scene::icon("Mosaic", 1.0).canvas);
 }
 
+#[test]
+fn unruly() {
+    let mut scene = Scene::id("Unruly", "8x8dn#1");
+    check("unruly-start", &scene.canvas);
+    // At 32 pixels, square (x, y) starts at (16 + 32x, 16 + 32y).
+    let at = |x: i32, y: i32| (16 + 32 * x + 10, 16 + 32 * y + 10);
+    let press = |b| Button::mouse(b, MouseAction::Press);
+    // The whole first row black (runs of three, too many blacks), the
+    // second column white where it can be, and the cursor.
+    for x in 0..8 {
+        let (px, py) = at(x, 0);
+        scene.press(px, py, press(MouseButton::Left));
+    }
+    for y in 1..8 {
+        let (px, py) = at(1, y);
+        scene.press(px, py, press(MouseButton::Right));
+    }
+    scene.press(0, 0, Button::cursor(CursorKey::Down));
+    scene.press(0, 0, Button::cursor(CursorKey::Right));
+    check("unruly-errors", &scene.canvas);
+    check("unruly-icon", &Scene::icon("Unruly", 1.0).canvas);
+}
+
 /// Every game in the app's own themes: upstream's icon positions, which
 /// show most of each game's colours.
 #[test]
 fn themes() {
     for theme in ["light", "dark"] {
-        for game in ["Flip", "Fifteen", "Guess", "Mosaic"] {
+        for game in ["Flip", "Fifteen", "Guess", "Mosaic", "Unruly"] {
             let scene = Scene::icon_in(theme, game, 1.0);
             check(&format!("{}-{theme}", game.to_lowercase()), &scene.canvas);
         }

@@ -165,3 +165,9 @@ fn mosaic() {
 fn nullgame() {
     check::<puzzles_games::nullgame::NullGame>();
 }
+
+#[cfg(feature = "unruly")]
+#[test]
+fn unruly() {
+    check::<puzzles_games::unruly::Unruly>();
+}

@@ -18,6 +18,8 @@ pub mod guess;
 pub mod mosaic;
 #[cfg(feature = "nullgame")]
 pub mod nullgame;
+#[cfg(feature = "unruly")]
+pub mod unruly;
 
 use puzzles_core::erased::Puzzle;
 use puzzles_core::game::Game;
@@ -82,6 +84,11 @@ pub const GAMES: &[GameInfo] = &[
     GameInfo::of::<mosaic::Mosaic>(
         "Grid-filling puzzle",
         "Fill in the grid given clues about number of nearby black squares.",
+    ),
+    #[cfg(feature = "unruly")]
+    GameInfo::of::<unruly::Unruly>(
+        "Black and white grid puzzle",
+        "Fill in the black and white grid to avoid runs of three.",
     ),
 ];
 

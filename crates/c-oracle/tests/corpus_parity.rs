@@ -82,3 +82,8 @@ fn guess_corpus_is_cs() {
 fn mosaic_corpus_is_cs() {
     check("mosaic", CGame::mosaic());
 }
+
+#[test]
+fn unruly_corpus_is_cs() {
+    check("unruly", CGame::unruly());
+}

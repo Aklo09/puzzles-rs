@@ -28,6 +28,7 @@ unsafe extern "C" {
     static guess: GameC;
     static mosaic: GameC;
     static nullgame: GameC;
+    static unruly: GameC;
 
     fn oracle_game_colours(g: *const GameC, out: *mut f32, max: c_int) -> c_int;
     fn oracle_mkhighlight(base: *const f32, out: *mut f32);
@@ -164,6 +165,13 @@ impl CGame {
     pub fn nullgame() -> Self {
         // SAFETY: a constant struct defined by nullgame.c.
         Self(unsafe { &nullgame })
+    }
+
+    /// `unruly.c`.
+    #[must_use]
+    pub fn unruly() -> Self {
+        // SAFETY: a constant struct defined by unruly.c.
+        Self(unsafe { &unruly })
     }
 
     pub(super) fn ptr(self) -> *const GameC {
