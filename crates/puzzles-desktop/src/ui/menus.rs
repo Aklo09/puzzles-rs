@@ -11,6 +11,7 @@ use puzzles_core::preset::{PresetEntry, PresetMenu};
 use super::fonts;
 use crate::app::command::Command;
 use crate::app::session::Session;
+use crate::app::zoom::Zoom;
 
 /// What a menu asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,4 +179,31 @@ pub fn game_menu(ui: &mut egui::Ui, session: &Session, mac: bool) -> Option<Menu
         }
     });
     action
+}
+
+/// The zoom menu, titled with the zoom applied (`zoom` over fit to
+/// window): zoom in, zoom out, fit to window.
+pub fn zoom_menu(ui: &mut egui::Ui, zoom: f32, can_zoom_in: bool, mac: bool) -> Option<Command> {
+    let mut chosen = None;
+    let title = menu_title(icon::MAGNIFYING_GLASS, &Zoom::percent(zoom));
+    let response = ui.menu_button(title, |ui| {
+        ui.set_min_width(180.0);
+        let zoomed = zoom > 1.0;
+        for (command, enabled) in [
+            (Command::ZoomIn, can_zoom_in),
+            (Command::ZoomOut, zoomed),
+            (Command::ZoomFit, zoomed),
+        ] {
+            let button = egui::Button::new(command.label())
+                .shortcut_text(command.shortcut_text(mac).unwrap_or_default());
+            if ui.add_enabled(enabled, button).clicked() {
+                chosen = Some(command);
+                ui.close();
+            }
+        }
+    });
+    response
+        .response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "Zoom"));
+    chosen
 }

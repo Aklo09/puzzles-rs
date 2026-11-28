@@ -14,6 +14,7 @@ mod menus;
 mod puzzle_view;
 mod settings;
 mod shortcuts;
+mod toolbar;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ use puzzles_core::midend::ConfigKind;
 use puzzles_games::{GAMES, GameInfo};
 
 use crate::app::command::Command;
+use crate::app::immersive::{self, Reveal};
 use crate::app::paths::AppDirs;
 use crate::app::save_file::SaveFile;
 use crate::app::session::{Outcome, Session};
@@ -38,6 +40,7 @@ use files::{FileAction, FileDialog};
 use menus::MenuAction;
 use puzzle_view::PuzzleView;
 use settings::{SettingsAction, SettingsDialog};
+use toolbar::{ToolbarAction, ToolbarState};
 
 /// The theme used when the chosen one can't be found.
 const FALLBACK_THEME: &str = "Light";
@@ -82,12 +85,8 @@ pub struct PuzzlesApp {
     started: bool,
     /// A saved game to open at launch (from the command line).
     launch_file: Option<PathBuf>,
-}
-
-/// What the toolbar asked for.
-enum ToolbarAction {
-    Command(Command),
-    Menu(MenuAction),
+    /// The toolbar showing in immersive mode.
+    reveal: Reveal,
 }
 
 impl PuzzlesApp {
@@ -107,6 +106,8 @@ impl PuzzlesApp {
     /// [`new`](Self::new) without a file to open.
     pub fn with_dirs(cc: &eframe::CreationContext<'_>, dirs: Option<AppDirs>) -> Self {
         fonts::install(&cc.egui_ctx);
+        // Cmd/Ctrl with +, - and 0 zoom the puzzle, not egui's UI.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         let file_storage = cc
             .storage
             .and_then(|s| eframe::get_value(s, FILE_DIALOG_KEY))
@@ -137,6 +138,7 @@ impl PuzzlesApp {
             file_storage,
             started: false,
             launch_file: None,
+            reveal: Reveal::default(),
         }
     }
 
@@ -469,6 +471,18 @@ impl PuzzlesApp {
                 self.error = error;
             }
             (Command::Quit, _) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            (Command::FullScreen, _) => {
+                let full = ctx.input(|i| i.viewport().fullscreen).unwrap_or(false);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(!full));
+            }
+            (Command::Immersive, _) => self.toggle_immersive(),
+            (Command::ZoomIn | Command::ZoomOut | Command::ZoomFit, Screen::Game { view, .. }) => {
+                view.zoom_command(|zoom| match command {
+                    Command::ZoomIn => zoom.zoom_in(),
+                    Command::ZoomOut => zoom.zoom_out(),
+                    _ => zoom.fit(),
+                });
+            }
             (Command::Load, _) => {
                 let dialog = FileDialog::load(self.file_storage.clone());
                 self.open_file_dialog(ctx, dialog);
@@ -485,6 +499,22 @@ impl PuzzlesApp {
                 }
             }
             (_, Screen::Library) => {}
+        }
+    }
+
+    /// Enters or leaves immersive mode, remembering it. Entering shows
+    /// the toolbar for a moment, so it is seen going.
+    fn toggle_immersive(&mut self) {
+        self.settings.immersive = !self.settings.immersive;
+        if self.settings.immersive {
+            self.reveal.show(Instant::now());
+        } else {
+            self.reveal.hide();
+        }
+        if let Some(dirs) = &self.dirs
+            && let Err(e) = self.settings.save(&dirs.settings())
+        {
+            self.report(format!("Saving settings: {e}"));
         }
     }
 
@@ -509,9 +539,9 @@ impl PuzzlesApp {
                 ui,
                 |_| {},
                 |ui| {
-                    settings = Self::settings_button(ui).clicked();
-                    load =
-                        Self::icon_button(ui, icon::FOLDER_OPEN, "Load…", &tooltip, true).clicked();
+                    settings = toolbar::settings_button(ui).clicked();
+                    load = toolbar::icon_button(ui, icon::FOLDER_OPEN, "Load…", &tooltip, true)
+                        .clicked();
                 },
             );
             ui.vertical_centered(|ui| {
@@ -541,30 +571,6 @@ impl PuzzlesApp {
         }
     }
 
-    /// The gear that opens Settings.
-    fn settings_button(ui: &mut egui::Ui) -> egui::Response {
-        Self::icon_button(ui, icon::GEAR_SIX, "Settings", "Settings", true)
-    }
-
-    /// A toolbar-style icon button. The icon is a private-use character,
-    /// so the button is named `label` for screen readers (and UI tests).
-    fn icon_button(
-        ui: &mut egui::Ui,
-        glyph: &str,
-        label: &str,
-        tooltip: &str,
-        enabled: bool,
-    ) -> egui::Response {
-        let glyph = RichText::new(glyph).size(20.0).family(fonts::icon_family());
-        let response = ui
-            .add_enabled(enabled, egui::Button::new(glyph).frame(false))
-            .on_hover_text(tooltip)
-            .on_disabled_hover_text(tooltip);
-        response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
-        response
-    }
-
     /// One game in the library: its name, and what kind of puzzle it is
     /// underneath; the objective as a tooltip.
     fn library_row(ui: &mut egui::Ui, info: &GameInfo) -> egui::Response {
@@ -591,70 +597,75 @@ impl PuzzlesApp {
             .on_hover_cursor(egui::CursorIcon::PointingHand)
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) -> Option<ToolbarAction> {
-        let Screen::Game { session, .. } = &mut self.screen else {
+    /// The toolbar: a panel at the top, or in immersive mode over the
+    /// puzzle while revealed.
+    fn toolbar(&mut self, ui: &mut egui::Ui, now: Instant) -> Option<ToolbarAction> {
+        let ctx = ui.ctx().clone();
+        let immersive = self.settings.immersive;
+        let full_screen = ctx.input(|i| i.viewport().fullscreen).unwrap_or(false);
+        let Screen::Game { session, view } = &mut self.screen else {
             return None;
         };
+        let state = ToolbarState {
+            mac: self.mac,
+            zoom: view.applied_zoom(),
+            full_screen,
+            immersive,
+        };
         let presets_file = &mut self.presets_file;
-        let mac = self.mac;
-        let mut clicked = None;
-        egui::Panel::top("toolbar").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (i, entry) in Command::TOOLBAR.into_iter().enumerate() {
-                    let Some(command) = entry else {
-                        ui.separator();
-                        if i == 1 {
-                            // After Games: what to play.
-                            let opened = |session: &mut Session| {
-                                if let Some(file) = presets_file.as_mut()
-                                    && file.refresh()
-                                {
-                                    session.use_presets_file(file);
-                                }
-                            };
-                            if let Some(a) = menus::type_menu(ui, session, opened) {
-                                clicked = Some(ToolbarAction::Menu(a));
-                            }
-                            if let Some(a) = menus::game_menu(ui, session, mac) {
-                                clicked = Some(ToolbarAction::Menu(a));
-                            }
-                            if Self::settings_button(ui).clicked() {
-                                clicked = Some(ToolbarAction::Menu(MenuAction::Settings));
-                            }
-                            ui.separator();
-                        }
-                        continue;
-                    };
-                    let glyph = match command {
-                        Command::Games => icon::SQUARES_FOUR,
-                        Command::NewGame => icon::DICE_FIVE,
-                        Command::Restart => icon::ARROW_COUNTER_CLOCKWISE,
-                        Command::Undo => icon::ARROW_U_UP_LEFT,
-                        Command::Redo => icon::ARROW_U_UP_RIGHT,
-                        Command::Solve => icon::LIGHTBULB,
-                        Command::Save | Command::Load | Command::Quit => continue,
-                    };
-                    let enabled = session.can(command);
-                    let tooltip = command.tooltip(mac);
-                    let response = Self::icon_button(ui, glyph, command.label(), &tooltip, enabled);
-                    if response.clicked() {
-                        clicked = Some(ToolbarAction::Command(command));
-                    }
-                }
+        if !immersive {
+            return egui::Panel::top("toolbar")
+                .show(ui, |ui| {
+                    toolbar::contents(ui, session, presets_file, &state)
+                })
+                .inner;
+        }
+        let screen = ctx.content_rect();
+        let band = immersive::Band::new(self.mac && full_screen);
+        let near_top = ctx
+            .input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| band.near_top(p.y - screen.top()));
+        if near_top || egui::Popup::is_any_open(&ctx) || self.dialog.is_some() {
+            self.reveal.show(now);
+        }
+        if !self.reveal.visible(now) {
+            return None;
+        }
+        if let Some(wait) = self.reveal.remaining(now) {
+            ctx.request_repaint_after(wait);
+        }
+        let fill = ctx.global_style().visuals.panel_fill.gamma_multiply(0.94);
+        let shown = egui::Area::new(egui::Id::new("toolbar-overlay"))
+            .fixed_pos(screen.min + egui::vec2(0.0, band.top))
+            .order(egui::Order::Foreground)
+            .show(&ctx, |ui| {
+                Frame::new()
+                    .fill(fill)
+                    .inner_margin(Margin::symmetric(8, 4))
+                    .show(ui, |ui| {
+                        ui.set_width(screen.width() - 16.0);
+                        toolbar::contents(ui, session, presets_file, &state)
+                    })
+                    .inner
             });
-        });
-        clicked
+        if shown.response.contains_pointer() {
+            self.reveal.show(now);
+        }
+        shown.inner
     }
 
     fn game(&mut self, ui: &mut egui::Ui) -> Outcome {
         let mac = self.mac;
         let input = self.dialog.is_none();
+        let immersive = self.settings.immersive;
         let Screen::Game { session, view } = &mut self.screen else {
             return Outcome::Continue;
         };
         let status = session.status_line();
         let wants_bar = session.capabilities().wants_statusbar || session.capabilities().is_timed;
-        if wants_bar || !status.is_empty() {
+        if immersive {
+            Self::status_overlay(ui.ctx(), &status);
+        } else if wants_bar || !status.is_empty() {
             egui::Panel::bottom("status").show(ui, |ui| {
                 ui.label(if status.is_empty() {
                     " ".to_owned()
@@ -668,6 +679,27 @@ impl PuzzlesApp {
             .frame(Frame::NONE.fill(background).inner_margin(Margin::same(8)))
             .show(ui, |ui| view.show(ui, session, mac, input))
             .inner
+    }
+
+    /// In immersive mode, the status line as a quiet label in the bottom
+    /// left corner, which clicks pass through.
+    fn status_overlay(ctx: &egui::Context, status: &str) {
+        if status.is_empty() {
+            return;
+        }
+        let visuals = &ctx.global_style().visuals;
+        let fill = visuals.panel_fill.gamma_multiply(0.8);
+        egui::Area::new(egui::Id::new("status-overlay"))
+            .anchor(Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0))
+            .order(egui::Order::Foreground)
+            .interactable(false)
+            .show(ctx, |ui| {
+                Frame::new()
+                    .fill(fill)
+                    .corner_radius(4)
+                    .inner_margin(Margin::symmetric(8, 3))
+                    .show(ui, |ui| ui.label(RichText::new(status).small()));
+            });
     }
 
     /// The overlay while a New Game generates; returns true on Cancel.
@@ -710,15 +742,15 @@ impl eframe::App for PuzzlesApp {
             });
         }
 
+        let now = Instant::now();
         if let Screen::Game { session, .. } = &mut self.screen {
-            let now = Instant::now();
             session.poll();
             session.tick(now);
             if let Some(wait) = session.autosave(now) {
                 ctx.request_repaint_after(wait);
             }
         }
-        match self.toolbar(ui) {
+        match self.toolbar(ui, now) {
             Some(ToolbarAction::Command(command)) => commands.push(command),
             Some(ToolbarAction::Menu(action)) => self.menu_action(&ctx, action),
             None => {}
@@ -735,7 +767,12 @@ impl eframe::App for PuzzlesApp {
         if self.dialog.is_some() {
             self.dialog(&ctx);
         }
-        if let Screen::Game { session, .. } = &mut self.screen {
+        if let Screen::Game { session, view } = &mut self.screen {
+            // Escape the game had no use for brings the toolbar back.
+            if view.take_unused_escape() && self.settings.immersive {
+                self.reveal.show(now);
+                ctx.request_repaint();
+            }
             if session.is_generating() && Self::generating(ui) && !session.cancel_generation() {
                 self.screen = Screen::Library;
             } else if session.wants_timer() || session.needs_redraw() {

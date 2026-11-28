@@ -20,23 +20,21 @@ pub enum Command {
     Save,
     /// Open a saved game.
     Load,
+    /// Zoom the puzzle in a step.
+    ZoomIn,
+    /// Zoom the puzzle out a step.
+    ZoomOut,
+    /// Fit the puzzle to the window.
+    ZoomFit,
+    /// Enter or leave full screen.
+    FullScreen,
+    /// Hide or show the toolbar and status bar.
+    Immersive,
     /// Close the app.
     Quit,
 }
 
 impl Command {
-    /// The commands on the toolbar, in order; `None` is a separator.
-    pub const TOOLBAR: [Option<Self>; 8] = [
-        Some(Self::Games),
-        None,
-        Some(Self::NewGame),
-        Some(Self::Restart),
-        None,
-        Some(Self::Undo),
-        Some(Self::Redo),
-        Some(Self::Solve),
-    ];
-
     /// What the command does, for tooltips.
     #[must_use]
     pub fn label(self) -> &'static str {
@@ -49,6 +47,11 @@ impl Command {
             Self::Solve => "Solve",
             Self::Save => "Save…",
             Self::Load => "Load…",
+            Self::ZoomIn => "Zoom in",
+            Self::ZoomOut => "Zoom out",
+            Self::ZoomFit => "Fit to window",
+            Self::FullScreen => "Full screen",
+            Self::Immersive => "Immersive mode",
             Self::Quit => "Quit",
         }
     }
@@ -71,6 +74,16 @@ impl Command {
             (Self::Save, false) => "Ctrl+S",
             (Self::Load, true) => "⌘O",
             (Self::Load, false) => "Ctrl+O",
+            (Self::ZoomIn, true) => "⌘+",
+            (Self::ZoomIn, false) => "Ctrl++",
+            (Self::ZoomOut, true) => "⌘−",
+            (Self::ZoomOut, false) => "Ctrl+-",
+            (Self::ZoomFit, true) => "⌘0",
+            (Self::ZoomFit, false) => "Ctrl+0",
+            (Self::FullScreen, true) => "⌃⌘F",
+            (Self::FullScreen, false) => "F11",
+            (Self::Immersive, true) => "⇧⌘F",
+            (Self::Immersive, false) => "Ctrl+Shift+F",
             (Self::Quit, true) => "⌘Q",
             (Self::Quit, false) => "Ctrl+Q",
             (Self::Solve, _) => return None,
@@ -100,8 +113,8 @@ mod tests {
     }
 
     #[test]
-    fn the_toolbar_starts_with_the_game_list() {
-        assert_eq!(Command::TOOLBAR[0], Some(Command::Games));
-        assert!(!Command::TOOLBAR.contains(&Some(Command::Quit)));
+    fn full_screen_follows_each_os() {
+        assert_eq!(Command::FullScreen.tooltip(true), "Full screen (⌃⌘F)");
+        assert_eq!(Command::FullScreen.tooltip(false), "Full screen (F11)");
     }
 }

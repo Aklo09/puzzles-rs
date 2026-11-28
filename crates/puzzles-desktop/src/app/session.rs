@@ -43,6 +43,8 @@ pub enum Outcome {
     Continue,
     /// The user asked to quit (C's `q`).
     Quit,
+    /// The game didn't use the key (C's `PKR_UNUSED`): the app may.
+    Unused,
 }
 
 /// A New Game running on its thread.
@@ -422,7 +424,8 @@ impl Session {
                 self.changed();
                 Outcome::Continue
             }
-            KeyResult::NoEffect | KeyResult::Unused => Outcome::Continue,
+            KeyResult::NoEffect => Outcome::Continue,
+            KeyResult::Unused => Outcome::Unused,
         }
     }
 
@@ -431,7 +434,14 @@ impl Session {
     pub fn can(&self, command: Command) -> bool {
         let playing = self.has_game && !self.is_generating();
         match command {
-            Command::Games | Command::Load | Command::Quit => true,
+            Command::Games
+            | Command::Load
+            | Command::Quit
+            | Command::ZoomIn
+            | Command::ZoomOut
+            | Command::ZoomFit
+            | Command::FullScreen
+            | Command::Immersive => true,
             Command::Save => self.has_game,
             Command::NewGame => !self.is_generating(),
             Command::Restart => playing,
@@ -441,15 +451,22 @@ impl Session {
         }
     }
 
-    /// Runs a game command. [`Command::Games`], [`Command::Save`] and
-    /// [`Command::Load`] are the UI's.
+    /// Runs a game command. The app's own (game list, files, zoom,
+    /// full screen, immersive mode) are the UI's.
     pub fn command(&mut self, command: Command) -> Outcome {
         if !self.can(command) {
             return Outcome::Continue;
         }
         self.message = None;
         match command {
-            Command::Games | Command::Save | Command::Load => Outcome::Continue,
+            Command::Games
+            | Command::Save
+            | Command::Load
+            | Command::ZoomIn
+            | Command::ZoomOut
+            | Command::ZoomFit
+            | Command::FullScreen
+            | Command::Immersive => Outcome::Continue,
             Command::Quit => Outcome::Quit,
             Command::NewGame => {
                 self.start_new_game();
