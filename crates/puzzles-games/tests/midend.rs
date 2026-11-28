@@ -394,3 +394,83 @@ fn extra_presets_can_be_replaced_and_checked() {
         "Width and height must both be greater than zero"
     );
 }
+
+/// Between choosing the next game and installing it (New Game on another
+/// thread), everything that describes a game describes the one on
+/// screen; Cancel puts the choice back.
+#[test]
+fn a_pending_choice_leaves_the_shown_game_described() {
+    let mut me = flip();
+    click(&mut me, 50, 50);
+    let (id, seed, before) = (me.get_game_id(), me.get_random_seed(), save(&me));
+    let params = Flip_params(&me);
+
+    me.game_id("4x4c#123").expect("valid");
+    let job = me.begin_new_game();
+    assert_eq!(me.get_game_id(), id, "not the pending game's");
+    assert_eq!(me.get_random_seed(), seed);
+    let dialog = me.get_config(ConfigKind::Seed).expect("a game");
+    assert_eq!(dialog.items[0].as_str(), seed.as_deref());
+    // The save file is the game on screen; PARAMS are the next game's,
+    // as in C.
+    let pending = save(&me);
+    assert_eq!(
+        pending
+            .lines()
+            .filter(|l| !l.starts_with("PARAMS"))
+            .collect::<Vec<_>>(),
+        before
+            .lines()
+            .filter(|l| !l.starts_with("PARAMS"))
+            .collect::<Vec<_>>()
+    );
+    let mut reloaded = Midend::<Flip>::new(b"reload", true, MidendOptions::default());
+    reloaded
+        .deserialise(&mut pending.as_bytes())
+        .expect("loads");
+    assert_eq!(reloaded.get_game_id(), id);
+    // Restart replays the game on screen.
+    me.restart_game();
+    assert_eq!(me.get_game_id(), id);
+
+    // Cancel: the job is stale and the choice gone.
+    assert!(me.cancel_new_game());
+    assert!(!me.finish_new_game(job.run()));
+    assert_eq!(Flip_params(&me), params);
+    assert_eq!((me.get_game_id(), me.get_random_seed()), (id, seed));
+    let params_line = |s: &str| {
+        s.lines()
+            .find(|l| l.starts_with("PARAMS"))
+            .map(str::to_owned)
+    };
+    assert_eq!(params_line(&save(&me)), params_line(&before));
+    assert!(!me.cancel_new_game(), "nothing left to cancel");
+    me.new_game();
+    assert_eq!(Flip_params(&me), params, "New Game keeps the old size");
+
+    // Finishing installs the choice.
+    me.game_id("4x4c#123").unwrap();
+    me.new_game();
+    assert_eq!(me.get_random_seed().as_deref(), Some("4x4c#123"));
+    assert!(!me.cancel_new_game());
+}
+
+#[test]
+fn a_cancelled_custom_size_is_forgotten() {
+    let mut me = flip();
+    let params = Flip_params(&me);
+    let mut items = me.get_config(ConfigKind::Settings).unwrap().items;
+    items[0] = puzzles_core::config::ConfigItem::string("Width", "40");
+    me.set_config(ConfigKind::Settings, &items).expect("valid");
+    assert_eq!(Flip_params(&me).0, 40);
+    let _job = me.begin_new_game();
+    assert!(me.cancel_new_game());
+    assert_eq!(Flip_params(&me), params);
+    let dialog = me.get_config(ConfigKind::Settings).unwrap();
+    let width = params.0.to_string();
+    assert_eq!(
+        dialog.items[0].as_str(),
+        Some(width.as_str()),
+        "the dialog too"
+    );
+}
