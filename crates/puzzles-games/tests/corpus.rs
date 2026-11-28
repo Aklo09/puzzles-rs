@@ -81,3 +81,9 @@ fn guess() {
 fn mosaic() {
     insta::assert_snapshot!("mosaic", corpus::<puzzles_games::mosaic::Mosaic>());
 }
+
+#[cfg(feature = "unruly")]
+#[test]
+fn unruly() {
+    insta::assert_snapshot!("unruly", corpus::<puzzles_games::unruly::Unruly>());
+}

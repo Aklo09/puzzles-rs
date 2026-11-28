@@ -26,6 +26,8 @@ filled = "#27272a"
 # Guess's pegs, in Classic's order: red, yellow, green, blue, orange,
 # purple, brown, light blue, light green, pink.
 pieces = ["#e15759", "#f2cf4a", "#59a14f", "#4e79a7", "#f28e2b", "#9d6bb5", "#9c755f", "#7ec8e3", "#a6dba0", "#f5a3c7"]
+# Unruly's squares: 0 white, 1 black.
+binary = ["#ffffff", "#27272a"]
 
 [ui]
 accent = "#2563eb"

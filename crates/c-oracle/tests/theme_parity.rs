@@ -88,6 +88,11 @@ fn ported() -> Vec<Ported> {
             puzzles_games::nullgame::NullGame::PALETTE,
             CGame::nullgame(),
         ),
+        game(
+            puzzles_games::unruly::Unruly::NAME,
+            puzzles_games::unruly::Unruly::PALETTE,
+            CGame::unruly(),
+        ),
     ]
 }
 

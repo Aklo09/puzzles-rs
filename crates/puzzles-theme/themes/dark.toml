@@ -25,6 +25,9 @@ filled = "#d4d4d8"
 
 [series]
 pieces = ["#ef6b6d", "#f2d058", "#6cbf61", "#6f9bd1", "#f59a45", "#b58bcb", "#b08b73", "#8ed3ec", "#b5e3ae", "#f7b5d2"]
+# Unruly's squares stay white (0) and black (1), as on paper; black is
+# darker than the background so it stands apart from it.
+binary = ["#d4d4d8", "#09090b"]
 
 [ui]
 accent = "#60a5fa"
