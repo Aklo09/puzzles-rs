@@ -1134,3 +1134,41 @@ fn immersive_mode_hides_the_chrome_until_wanted() {
     assert_eq!(puzzle_rect(&h).height(), framed.height());
     let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
 }
+
+#[test]
+fn the_immersive_status_line_wraps_only_when_it_must() {
+    let mut h = app();
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    h.key_press_modifiers(Modifiers::COMMAND | Modifiers::SHIFT, Key::F);
+    h.run_steps(3);
+    // egui sizes an area from its last frame: a short line first, then
+    // longer ones must still get the room they need.
+    let line = h.get_by_label_contains("Moves").rect();
+    assert!(line.width() > 30.0, "one line: {line:?}");
+    let lines = |h: &mut Harness<'_, PuzzlesApp>, text: &str| {
+        if let Screen::Game { session, .. } = &mut h.state_mut().screen {
+            session.notify(text);
+        }
+        h.run_steps(3);
+        h.get_by_label_contains("Saved to").rect().height() / line.height()
+    };
+    let short = lines(
+        &mut h,
+        "Saved to /Users/someone/Documents/Puzzles/flip.sav.",
+    );
+    assert!(short < 1.5, "one line: {short}");
+    let long = lines(
+        &mut h,
+        &format!(
+            "Saved to /{}flip.sav.",
+            "a-folder-with-a-long-name/".repeat(8)
+        ),
+    );
+    assert!(
+        (1.5..4.0).contains(&long),
+        "wraps at the window's width: {long}"
+    );
+    let shown = h.get_by_label_contains("Saved to").rect();
+    assert!(shown.right() <= 720.0, "inside the window: {shown:?}");
+}
