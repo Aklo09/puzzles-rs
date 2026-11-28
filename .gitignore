@@ -3,3 +3,6 @@ skills-lock.json
 
 # Canvas snapshots a failing test wrote for review.
 *.new.png
+
+# macOS Finder metadata.
+.DS_Store
