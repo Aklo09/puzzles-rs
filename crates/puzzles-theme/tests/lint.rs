@@ -150,3 +150,30 @@ fn dark_adapts_what_it_takes_from_light() {
     // are.
     assert_eq!(dark[3], light[3]);
 }
+
+/// Guess marks right colour in the right place black and right colour in
+/// the wrong place white (C, every Mastermind set): in every theme the
+/// first stays the darker, which mirroring for a dark theme would swap.
+#[test]
+fn guess_feedback_keeps_its_meaning() {
+    let themes = ThemeSet::builtin();
+    let palette = [
+        PaletteEntry {
+            name: "correct_place",
+            spec: ColourSpec::Specific("correct_place"),
+        },
+        PaletteEntry {
+            name: "correct_colour",
+            spec: ColourSpec::Specific("correct_colour"),
+        },
+    ];
+    for name in themes.names() {
+        let c = themes.resolve(&name, "guess", &palette).expect("defined");
+        assert!(
+            luminance(c[0]) < luminance(c[1]),
+            "{name}: right place {:?} must be darker than right colour {:?}",
+            c[0],
+            c[1]
+        );
+    }
+}

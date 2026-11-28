@@ -36,3 +36,11 @@ right = "#d4d4d8"
 
 [game.flip.overrides]
 wrong = "#2a2a2e"
+
+# Guess: right colour in the right place stays black and right colour in
+# the wrong place white, as in every other theme and every Mastermind set
+# (mirroring alone would swap them). Pegs keep their light outline here,
+# so black ones stay visible.
+[game.guess]
+correct_place = "#000000"
+correct_colour = "#ffffff"
