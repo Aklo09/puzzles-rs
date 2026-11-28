@@ -10,11 +10,13 @@
 //! and "Themes in the app").
 
 mod adapt;
+mod check;
 mod colour;
 mod model;
 mod resolve;
 
 pub use adapt::{Mirror, lightness};
+pub use check::{UnusedKey, unused_game_keys};
 pub use colour::{Bevel, Rgb, bevel, mix};
 pub use model::{
     GameColours, ROLES, SERIES, Theme, ThemeError, UI_KEYS, game_key, role_key, series_key,

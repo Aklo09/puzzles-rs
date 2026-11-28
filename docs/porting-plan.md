@@ -938,7 +938,9 @@ run alongside Phases 4–5. Front-end and game work only meet at the
    `encode_move`/`decode_move`. The codec corpus and property tests must pass.
    Then port `interpret_move`/`execute_move`/`Ui`. The `.sav` replay must match.
 4. Port the palette: classify each C colour as Role / Series / Derived /
-   Specific in `palette!`. Palette parity under Classic must hold.
+   Specific in `palette!`. Palette parity under Classic must hold. Add
+   the game's table to `docs/themes.md` (the conformance test prints
+   it).
 5. Port drawing. The draw trace must match. Review the canvas snapshots
    in every built-in theme, and add `[game.<name>]` theme overrides
    where the auto-adapted colours are poor.
