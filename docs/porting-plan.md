@@ -1315,7 +1315,7 @@ at the top.
 
 - **Phase 4a: in progress** (the simple games, each by the porting
   recipe in §7):
-  - Mosaic (`mosaic`): matches C for presets, parameter strings, the
+  - Mosaic (`mosaic`, #35): **done** (2026-11-28). Matches C for presets, parameter strings, the
     Custom dialog through both mid-ends (C's Height and Width swapped
     before comparing), descriptions (presets, random sizes up to 14 × 14
     with and without aggressive generation), mutated descriptions, random
@@ -1333,7 +1333,7 @@ at the top.
     theme; the shared driver (`Pair::with_c_colours`, `CColours`) and
     the theme parity test map them back to C's indices. Canvas snapshots
     in Classic, Light and Dark.
-    Desktop play on two OSes is still to do.
+    Played in the desktop app on macOS and Windows (by hand).
 
     Notes, found on the way:
     - C's solve move reader (`execute_move`, `s…`) never returns from a
