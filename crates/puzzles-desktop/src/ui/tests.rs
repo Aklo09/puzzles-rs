@@ -2,6 +2,11 @@
 //! through the accessibility tree (AccessKit), input is synthetic, and
 //! frames can be rendered with wgpu.
 //!
+//! Frames are settled with `run_ok`, never `run`: a focused text field's
+//! blinking cursor keeps asking for repaints, and on a slow runner (the
+//! Windows CI machine) a blink falls inside `run`'s step limit, which
+//! `run` treats as an error.
+//!
 //! `screenshots` writes PNGs of the main screens to
 //! `target/ui-screenshots/` for review. It asserts nothing about pixels
 //! and skips rendering where no GPU adapter is available.
@@ -347,7 +352,7 @@ fn screenshots() {
     open_menu(&mut h, "Game");
     save(&mut h, "menu-game");
     click_label(&mut h, "Enter game ID");
-    h.run();
+    h.run_ok();
     save(&mut h, "dialog-game-id");
     h.key_press(Key::Escape);
     h.run_steps(2);
@@ -355,12 +360,12 @@ fn screenshots() {
     click_label(&mut h, "Custom…");
     set_field(&mut h, "Width", "0");
     click_label(&mut h, "OK");
-    h.run();
+    h.run_ok();
     save(&mut h, "dialog-custom-error");
     h.key_press(Key::Escape);
     h.run_steps(2);
     h.get_by_label("Settings").click();
-    h.run();
+    h.run_ok();
     save(&mut h, "settings-light");
     h.key_press(Key::Escape);
     h.run_steps(2);
@@ -377,7 +382,7 @@ fn screenshots() {
     h.key_press_modifiers(Modifiers::COMMAND, Key::S);
     h.run_steps(2);
     wait_for_label(&mut h, "flip.sav");
-    h.run();
+    h.run_ok();
     save(&mut h, "dialog-save");
     // The first Escape leaves the name field.
     for _ in 0..2 {
@@ -389,7 +394,7 @@ fn screenshots() {
     h.run_steps(2);
     wait_for_label(&mut h, "flip.sav");
     h.get_by_label_contains("flip.sav").click();
-    h.run();
+    h.run_ok();
     save(&mut h, "dialog-load");
     h.key_press(Key::Escape);
     h.run_steps(2);
@@ -408,10 +413,10 @@ fn screenshots() {
         h.key_press_modifiers(Modifiers::COMMAND, Key::Equals);
         h.run_steps(2);
     }
-    h.run();
+    h.run_ok();
     save(&mut h, "flip-zoomed");
     h.get_by_label("Zoom").click();
-    h.run();
+    h.run_ok();
     save(&mut h, "menu-zoom");
     h.key_press(Key::Escape);
     h.run_steps(2);
@@ -420,7 +425,7 @@ fn screenshots() {
     h.run_steps(2);
     h.state_mut().reveal.hide();
     h.event(Event::PointerMoved(Pos2::new(360.0, 400.0)));
-    h.run();
+    h.run_ok();
     save(&mut h, "flip-immersive");
     h.event(Event::PointerMoved(Pos2::new(360.0, 4.0)));
     h.run_steps(2);
@@ -433,14 +438,14 @@ fn screenshots() {
     h.run_steps(3);
     save(&mut h, "flip-dark");
     h.get_by_label("Settings").click();
-    h.run();
+    h.run_ok();
     save(&mut h, "settings-dark");
     h.key_press(Key::Escape);
     h.run_steps(2);
     h.key_press_modifiers(Modifiers::COMMAND, Key::O);
     h.run_steps(2);
     wait_for_label(&mut h, "flip.sav");
-    h.run();
+    h.run_ok();
     save(&mut h, "dialog-load-dark");
     h.key_press(Key::Escape);
     h.run_steps(2);
@@ -464,7 +469,7 @@ fn screenshots() {
     };
     h.run_steps(2);
     h.get_by_label("Settings").click();
-    h.run();
+    h.run_ok();
     save(&mut h, "settings-classic");
 }
 
@@ -487,7 +492,7 @@ fn click_label(h: &mut Harness<'_, PuzzlesApp>, label: &str) {
 fn set_field(h: &mut Harness<'_, PuzzlesApp>, label: &str, text: &str) {
     // Let the dialog settle first: it re-centres a frame after it grows
     // (say, when an error appears), and the field moves with it.
-    h.run();
+    h.run_ok();
     // Press and release in separate frames, as a real click arrives.
     let pos = h
         .get_by_role_and_label(Role::TextInput, label)
