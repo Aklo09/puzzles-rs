@@ -415,7 +415,7 @@ fn screenshots() {
     }
     h.run_ok();
     save(&mut h, "flip-zoomed");
-    h.get_by_label("Zoom").click();
+    h.get_by_label_contains("Zoom (").click();
     h.run_ok();
     save(&mut h, "menu-zoom");
     h.key_press(Key::Escape);
@@ -471,6 +471,36 @@ fn screenshots() {
     h.get_by_label("Settings").click();
     h.run_ok();
     save(&mut h, "settings-classic");
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+
+    // A narrow window: the compact toolbar.
+    h.set_size(egui::vec2(super::MIN_WINDOW_WIDTH, 520.0));
+    h.run_steps(3);
+    save(&mut h, "toolbar-compact");
+}
+
+/// Where the toolbar's last button ends in a window `width` points wide.
+fn toolbar_end(width: f32) -> f32 {
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(width, 480.0))
+        .build_eframe(|cc| PuzzlesApp::with_dirs(cc, None));
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    h.get_by_label("Immersive mode").rect().right()
+}
+
+#[test]
+fn the_whole_toolbar_fits_at_every_window_width() {
+    use super::toolbar::{COMPACT_BELOW, MIN_WINDOW_WIDTH};
+    for width in [COMPACT_BELOW, COMPACT_BELOW - 1.0, MIN_WINDOW_WIDTH] {
+        let end = toolbar_end(width);
+        assert!(end <= width, "{width} pt wide: the toolbar ends at {end}");
+    }
+    assert!(
+        toolbar_end(COMPACT_BELOW - 1.0) < toolbar_end(COMPACT_BELOW),
+        "compact below the threshold"
+    );
 }
 
 // ---------------------------------------------------------------------

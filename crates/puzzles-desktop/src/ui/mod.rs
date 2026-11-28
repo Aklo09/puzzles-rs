@@ -16,6 +16,8 @@ mod settings;
 mod shortcuts;
 mod toolbar;
 
+pub use toolbar::MIN_WINDOW_WIDTH;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -611,6 +613,7 @@ impl PuzzlesApp {
             zoom: view.applied_zoom(),
             full_screen,
             immersive,
+            width: ctx.content_rect().width(),
         };
         let presets_file = &mut self.presets_file;
         if !immersive {
