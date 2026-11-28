@@ -1144,7 +1144,7 @@ at the top.
     Done bar: Flip, Fifteen and Guess pass everything that runs
     headless; canvas snapshots and manual play come with the desktop app.
 
-- **Phase 3: in progress** (order in the decision log):
+- **Phase 3: done** (2026-11-28; order in the decision log):
   - user presets, engine side: `MidendOptions::extra_presets` is a
     `PresetMenu<String>` of parameter strings, decoded and validated
     when the mid-end builds its menu (invalid ones dropped, submenus
@@ -1292,8 +1292,30 @@ at the top.
     the band that reveals it moves down with it (`immersive::Band`);
     rechecked in the real window.
 
-  Next: manual play of Flip, Fifteen and Guess on two OSes, which closes
-  Phase 3.
+  - manual play (the play test): a 39-check list covering the library
+    and window, the three games, menus and dialogs, themes and settings,
+    saving and restoring, and full screen, immersive mode and zoom,
+    played with a release build on macOS (Claude, in the real window
+    with computer use, plus pinch zoom by hand) and on Windows (by
+    hand). It found six problems, each fixed in its own PR and rechecked
+    on both OSes: Dark reversed Guess's feedback pegs (#32, plus a lint
+    test over every theme); zoom stopped at 137% in a maximised Retina
+    window (#33, a 32-megapixel budget); the immersive status overlay
+    wrapped every few letters (#29); a narrow window cut off the
+    toolbar (#34, compact menus and a 420 pt minimum); the file dialog's
+    path editor was unreadable in light themes (#31); and a cancelled
+    New Game kept its choice, behind which a pending seed or game ID left
+    the shown game undescribed, so leaving or quitting while generating
+    could autosave a session that couldn't be resumed (#30, the
+    mid-end's `Shown` record and `cancel_new_game`). Everything passes on
+    both OSes; on macOS, following the system appearance and dropping a
+    file from Finder were checked on Windows instead. Along the way CI
+    became a few minutes instead of 10 to 15: `main` now fills the
+    dependency cache (#28).
+
+  Next: Phase 4a, the simple games (sixteen, twiddle, flood, pegs,
+  samegame, blackbox, netslide, cube, inertia, mosaic, unruly), each by
+  the porting recipe in §7.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs
