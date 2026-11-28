@@ -154,6 +154,12 @@ fn guess() {
     check::<puzzles_games::guess::Guess>();
 }
 
+#[cfg(feature = "mosaic")]
+#[test]
+fn mosaic() {
+    check::<puzzles_games::mosaic::Mosaic>();
+}
+
 #[cfg(feature = "nullgame")]
 #[test]
 fn nullgame() {

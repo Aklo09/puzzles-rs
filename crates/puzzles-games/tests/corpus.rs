@@ -75,3 +75,9 @@ fn flip() {
 fn guess() {
     insta::assert_snapshot!("guess", corpus::<puzzles_games::guess::Guess>());
 }
+
+#[cfg(feature = "mosaic")]
+#[test]
+fn mosaic() {
+    insta::assert_snapshot!("mosaic", corpus::<puzzles_games::mosaic::Mosaic>());
+}

@@ -1313,9 +1313,50 @@ at the top.
     became a few minutes instead of 10 to 15: `main` now fills the
     dependency cache (#28).
 
-  Next: Phase 4a, the simple games (sixteen, twiddle, flood, pegs,
-  samegame, blackbox, netslide, cube, inertia, mosaic, unruly), each by
-  the porting recipe in §7.
+- **Phase 4a: in progress** (the simple games, each by the porting
+  recipe in §7):
+  - Mosaic (`mosaic`): matches C for presets, parameter strings, the
+    Custom dialog through both mid-ends (C's Height and Width swapped
+    before comparing), descriptions (presets, random sizes up to 14 × 14
+    with and without aggressive generation), mutated descriptions, random
+    play scripts (presses, drags and releases of both buttons, arrows,
+    selects, solver calls, raw toggles, drags painting any value, solve
+    strings and junk) with every flash frame and the status bar, winning
+    by clicks, a drag straight after a release, its corpus, palette
+    parity, upstream's `mosaic.sav` through `fuzzpuzz`, and a save file
+    whose squares hold odd values drawn from scratch. Palette: unmarked
+    and blank squares are `Specific`, black squares `Filled`, satisfied
+    clues `Done` (C's grey is a Classic override; Light and Dark show
+    their green). The clue text colours, C aliases of the black and white
+    square colours (`COL_TEXT_DARK = COL_MARKED`), are `Specific` entries
+    of their own (`text_dark`, `text_light`), set in every built-in
+    theme; the shared driver (`Pair::with_c_colours`, `CColours`) and
+    the theme parity test map them back to C's indices. Canvas snapshots
+    in Classic, Light and Dark.
+    Desktop play on two OSes is still to do.
+
+    Notes, found on the way:
+    - C's solve move reader (`execute_move`, `s…`) never returns from a
+      string with more hex digits than the grid needs, beyond one
+      (`bits` stops falling once the grid is full, so it stops reading);
+      only a damaged save file has one. The port ignores the extra
+      digits; the parity scripts stay within C's limit.
+    - C accepts any move string starting with an unknown letter, or
+      empty, as a recount of the clues left. The port reads it as
+      `Move::Recount` and writes it back as the empty move.
+    - A drag move's last field is stored in a square unchecked, so a
+      file can give a square any `char` value; C's arithmetic, drawing
+      flags and its -1 "never drawn" sentinel then apply as they are, and
+      the port keeps them (squares are `i8`, C's signed `char` on every
+      platform CI covers; Linux on ARM has an unsigned `char`).
+    - Move fields C reads as bare digits wrap past 9 digits (`atoi`, see
+      `parse`); the port writes them back as unsigned 32-bit numbers,
+      which read back the same.
+    - Generation in a debug build is slow for 25 × 25 (about 1.6 s per
+      puzzle, 0.1 s in release), so the corpus test takes about 16 s.
+
+  Next in Phase 4a: sixteen, twiddle, flood, pegs, samegame, blackbox,
+  netslide, cube, inertia, unruly.
 
 Differential tests (Rust vs C) live in `crates/c-oracle/tests/*_parity.rs`;
 each ported module also keeps Rust-only unit tests, so `--no-oracle` runs

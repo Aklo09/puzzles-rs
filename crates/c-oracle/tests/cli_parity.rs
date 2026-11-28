@@ -3,7 +3,7 @@
 //!
 //! * `roundtrip` against C's `fuzzpuzz` (load, size to `INT_MAX`,
 //!   redraw, save): the same bytes or the same error, for upstream's
-//!   `fifteen.sav` and `flip.sav`, files saved by C after random play, and damaged copies.
+//!   saves (`fifteen.sav`, `flip.sav`, `guess.sav`, `mosaic.sav`), files saved by C after random play, and damaged copies.
 //! * `generate` against C's mid-end generating from the same seed IDs,
 //!   non-interactively as C's batch mode does.
 
@@ -20,6 +20,7 @@ fn c_fuzzpuzz(data: &[u8]) -> Result<Vec<u8>, String> {
         "Fifteen" => CGame::fifteen(),
         "Flip" => CGame::flip(),
         "Guess" => CGame::guess(),
+        "Mosaic" => CGame::mosaic(),
         _ => return Err("Game not recognised".into()),
     };
     let mut c = CMidend::new(game, b"roundtrip", true);
@@ -34,16 +35,24 @@ fn rust(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Upstream's save files (its icon sources) for the ported games: the
-/// same output as `fuzzpuzz`, which is the file itself (line ends aside).
+/// same output as `fuzzpuzz`, which is the file itself (line ends aside)
+/// but for `mosaic.sav`. That file comes from an older Mosaic: C reads
+/// its parameters `8x8a0h1` as `8x8` and writes them so, and drops its
+/// `TIME` line, since Mosaic has no timer now.
 #[test]
 fn upstream_saves_round_trip_like_fuzzpuzz() {
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../third_party/puzzles-c/icons");
-    for name in ["fifteen.sav", "flip.sav", "guess.sav"] {
+    for name in ["fifteen.sav", "flip.sav", "guess.sav", "mosaic.sav"] {
         let data = std::fs::read(dir.join(name)).expect("an icon save file");
         let out = rust(&data);
         assert_eq!(out, c_fuzzpuzz(&data), "{name}");
-        let lf = String::from_utf8(data).unwrap().replace("\r\n", "\n");
+        let mut lf = String::from_utf8(data).unwrap().replace("\r\n", "\n");
+        if name == "mosaic.sav" {
+            lf = lf
+                .replace(":7:8x8a0h1\n", ":3:8x8\n")
+                .replace("TIME    :7:214.795\n", "");
+        }
         assert_eq!(out.map(|o| String::from_utf8(o).unwrap()), Ok(lf), "{name}");
     }
 }

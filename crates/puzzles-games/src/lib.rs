@@ -14,6 +14,8 @@ pub mod fifteen;
 pub mod flip;
 #[cfg(feature = "guess")]
 pub mod guess;
+#[cfg(feature = "mosaic")]
+pub mod mosaic;
 #[cfg(feature = "nullgame")]
 pub mod nullgame;
 
@@ -75,6 +77,11 @@ pub const GAMES: &[GameInfo] = &[
     GameInfo::of::<guess::Guess>(
         "Combination-guessing puzzle",
         "Guess the hidden combination of colours.",
+    ),
+    #[cfg(feature = "mosaic")]
+    GameInfo::of::<mosaic::Mosaic>(
+        "Grid-filling puzzle",
+        "Fill in the grid given clues about number of nearby black squares.",
     ),
 ];
 

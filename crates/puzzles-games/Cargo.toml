@@ -10,10 +10,11 @@ publish.workspace = true
 # One feature per game (D3), all puzzles on by default. `nullgame` is
 # C's template game: off by default and never in the registry.
 [features]
-default = ["fifteen", "flip", "guess"]
+default = ["fifteen", "flip", "guess", "mosaic"]
 fifteen = []
 flip = []
 guess = []
+mosaic = []
 nullgame = []
 
 [dependencies]

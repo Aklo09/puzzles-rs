@@ -77,3 +77,8 @@ fn flip_corpus_is_cs() {
 fn guess_corpus_is_cs() {
     check("guess", CGame::guess());
 }
+
+#[test]
+fn mosaic_corpus_is_cs() {
+    check("mosaic", CGame::mosaic());
+}
