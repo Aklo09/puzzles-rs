@@ -1357,7 +1357,7 @@ at the top.
     - Generation in a debug build is slow for 25 × 25 (about 1.6 s per
       puzzle, 0.1 s in release), so the corpus test takes about 16 s.
 
-  - Unruly (`unruly`): matches C for presets, parameter strings (unknown
+  - Unruly (`unruly`, #36): matches C for presets, parameter strings (unknown
     difficulty letters by verdict only: C's `encode_params` reads past
     its letter table for one), the Custom dialog through both mid-ends,
     descriptions (presets, random sizes up to 12 × 12 in every difficulty
@@ -1375,7 +1375,8 @@ at the top.
     `Specific`. In C the bevel colours are also the completion flash's
     two frames; kept so (decided 2026-11-28: the flash isn't worth
     entries of its own). Canvas snapshots in Classic, Light and Dark.
-    Desktop play on two OSes is still to do.
+    Played in the desktop app on macOS (by hand); Windows is still to
+    do.
 
   Next in Phase 4a: sixteen, twiddle, flood, pegs, samegame, blackbox,
   netslide, cube, inertia.
