@@ -56,12 +56,14 @@ Never copy the C code into the repo.
 ```
 cargo xtask ci              # fmt, clippy -D warnings, all tests incl. C oracle (same as CI)
 cargo xtask ci --no-oracle  # same, without the C reference tests
+cargo xtask ci --build-only # clippy + build the tests (CI fills its cache on main)
 cargo insta test --review   # when snapshots change
 UPDATE_SNAPSHOTS=1 cargo test -p puzzles-games --test canvas   # accept new canvas PNGs (review them)
 cargo test -p puzzles-desktop screenshots   # app screenshots in target/ui-screenshots/ (look at them after UI changes)
 ```
 CI (GitHub Actions) runs `cargo xtask ci` on pull requests, on Ubuntu and
-Windows, and skips docs-only changes. macOS runs on demand only:
+Windows, and skips docs-only changes; pushes to `main` only build, to fill
+the dependency cache pull requests restore. macOS runs on demand only:
 `gh workflow run ci.yml --ref <branch>` or `cargo xtask ci` on a Mac. Ask
 for a macOS run before merging float, drawing or C-type-width-sensitive
 changes.

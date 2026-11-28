@@ -14,14 +14,29 @@ Commands:
                      are errors) and all tests. --no-oracle skips the C
                      reference tests, for machines without a C compiler or
                      the third_party/puzzles-c submodule.
+  ci --build-only    Build what `ci` builds (clippy, and the tests without
+                     running them), to fill CI's cache on main.
   help               Show this message.";
+
+/// What `ci` does.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// Every check, the C reference tests included.
+    Full,
+    /// Every check but the C reference tests.
+    NoOracle,
+    /// Clippy and building the tests, with `Full`'s flags, so their
+    /// build is the one `Full` reuses.
+    BuildOnly,
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     match args.as_slice() {
-        ["ci"] => ci(true),
-        ["ci", "--no-oracle"] => ci(false),
+        ["ci"] => ci(Mode::Full),
+        ["ci", "--no-oracle"] => ci(Mode::NoOracle),
+        ["ci", "--build-only"] => ci(Mode::BuildOnly),
         [] | ["help" | "--help" | "-h"] => {
             println!("{USAGE}");
             ExitCode::SUCCESS
@@ -34,11 +49,16 @@ fn main() -> ExitCode {
 }
 
 /// Runs the CI checks in order, stopping at the first failure.
-fn ci(with_oracle: bool) -> ExitCode {
+fn ci(mode: Mode) -> ExitCode {
     // With the oracle, enable every feature (the C reference included);
     // without it, the default features build and test everything else.
-    let features: &[&str] = if with_oracle {
+    let features: &[&str] = if mode == Mode::NoOracle {
+        &[]
+    } else {
         &["--all-features"]
+    };
+    let no_run: &[&str] = if mode == Mode::BuildOnly {
+        &["--no-run"]
     } else {
         &[]
     };
@@ -56,11 +76,14 @@ fn ci(with_oracle: bool) -> ExitCode {
         ),
         (
             "tests",
-            [&["test", "--workspace", "--locked"][..], features].concat(),
+            [&["test", "--workspace", "--locked"][..], features, no_run].concat(),
         ),
     ];
 
     for (name, args) in &steps {
+        if mode == Mode::BuildOnly && *name == "format" {
+            continue;
+        }
         println!("\n==> xtask ci: {name}: cargo {}", args.join(" "));
         if !cargo(args) {
             eprintln!("\nxtask ci: {name} failed");

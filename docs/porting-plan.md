@@ -21,7 +21,7 @@ summarises them all.
 | — | C source for oracle tests | **Decided** 2026-11-25 | Git submodule of upstream at `third_party/puzzles-c`, pinned to `616da16` |
 | — | Fonts | **Decided** 2026-11-25 | Inter + JetBrains Mono (OFL), bundled, for both the puzzle canvas and the app UI; Noto Sans fallback added with localisation |
 | — | CI script | **Decided** 2026-11-25 | `cargo xtask ci` (Rust `xtask` crate, no extra tools); GitHub Actions runs it |
-| — | CI frequency | **Decided** 2026-11-25 | PRs run Ubuntu + Windows; macOS on demand (manual run or a local Mac); docs-only PRs skip CI; no rerun after merge to `main` (see §6) |
+| — | CI frequency | **Decided** 2026-11-25 | PRs run Ubuntu + Windows; macOS on demand (manual run or a local Mac); docs-only PRs skip CI; no test rerun after merge to `main` (see §6). Amended 2026-11-28: `main` builds without testing (`cargo xtask ci --build-only`) on each push so pull requests can restore its dependency cache (GitHub lets a PR restore only its own branch's or `main`'s caches, so every PR compiled ~240 crates from scratch, 10–15 minutes); only `main` saves caches; CI builds use line-tables-only debug info. Rejected: leaving PRs cold; cutting debug info only |
 | — | Porting style | **Decided** 2026-11-25 | Map C constructs to idiomatic Rust (types + traits, `Clone`/`Drop`, `Option`/`Result`, closures) with identical observable behaviour; idiomatic names with `#[doc(alias)]` to the C name. First applied to `dsf`: three types sharing a trait (see `CLAUDE.md`) |
 | — | Latin solver API | **Decided** 2026-11-25 | Games plug in through a `LatinRules` trait (`deduce` per difficulty level, `is_valid`, `branch` for a fresh per-guess context, `None` = shared, replacing `ctxnew`/`ctxfree`); `Deduction` and `Outcome` enums replace C's int codes and `diff_impossible`/`ambiguous`/`unfinished`; solver reasoning text is ported now through a `SolverLog` (verbosity + recursion depth, replacing the `solver_show_working`/`solver_recurse_depth` globals), text parity checked in Phase 6. Rejected: a struct of closures; C's int codes; adding messages only in Phase 6 |
 | — | tree234 container | **Decided** 2026-11-25 | `sorted-vec`'s `SortedSet` (re-exported as `puzzles_core::sorted_set`, plus a `find_rel` helper for `findrel234`/`findrelpos234`) where C uses positions; std `BTreeSet`/`BTreeMap` elsewhere. Rejected: `indexset` (O(log n), but far less established), a local Vec wrapper (D5 prefers a crate) |
@@ -862,8 +862,12 @@ toolkit change.
      `cargo xtask ci` on a Mac. Do it before merging changes where
      platform differences can bite: float or drawing code, anything near
      FMA, `c_ulong` or other C type widths;
-   - **no rerun after merging to `main`:** with squash merges the PR run
-     already tested the same code.
+   - **no test rerun after merging to `main`:** with squash merges the
+     PR run already tested the same code. `main` only builds
+     (`cargo xtask ci --build-only`: clippy and `cargo test --no-run`
+     with the same flags) to fill the dependency cache, which only
+     `main` saves and pull requests restore; CI builds keep line tables
+     only, not full debug info.
 
    Linux CI will also build the desktop app once it exists (needs the
    usual X11/Wayland dev packages).
