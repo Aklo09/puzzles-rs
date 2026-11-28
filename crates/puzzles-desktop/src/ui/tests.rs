@@ -1172,3 +1172,34 @@ fn the_immersive_status_line_wraps_only_when_it_must() {
     let shown = h.get_by_label_contains("Saved to").rect();
     assert!(shown.right() <= 720.0, "inside the window: {shown:?}");
 }
+
+/// The file dialog's path editor and search field are egui's near-black
+/// "dark canvas" in every theme, unreadable in light ones: neither shows,
+/// from a button or a key.
+#[test]
+fn the_file_dialogs_have_no_unreadable_fields() {
+    let dirs = test_dirs("no-dark-fields");
+    let folder = dirs.themes().with_file_name("saves");
+    std::fs::create_dir_all(&folder).unwrap();
+    let mut h = app_with(dirs.clone());
+    h.state_mut().file_storage.last_picked_dir = Some(folder);
+    h.run_steps(2);
+    open(&mut h, "Flip");
+    h.key_press_modifiers(Modifiers::COMMAND, Key::S);
+    h.run_steps(2);
+    wait_for_label(&mut h, "saves");
+    let fields = |h: &Harness<'_, PuzzlesApp>| h.query_all_by_role(Role::TextInput).count();
+    assert_eq!(fields(&h), 1, "only the file name");
+    // Leave the name field, then try the path editor's keys.
+    h.key_press(Key::Escape);
+    h.run_steps(2);
+    for key in [Key::Slash, Key::Backtick] {
+        h.key_press(key);
+        h.run_steps(2);
+    }
+    h.event(Event::Text("~".to_owned()));
+    h.run_steps(2);
+    assert!(dialog_open(&h));
+    assert!(fields(&h) <= 1, "no path editor: {}", fields(&h));
+    let _ = std::fs::remove_dir_all(dirs.themes().parent().unwrap());
+}

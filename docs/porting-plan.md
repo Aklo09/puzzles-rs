@@ -1256,7 +1256,8 @@ at the top.
     releases focus when a file dialog opens (Escape in the Save dialog
     first leaves the name field). The crate's search field is egui's
     near-black canvas in every theme, unreadable in light ones, so it is
-    hidden. The real-window check (macOS, computer use) confirmed the
+    hidden; the play test found its path editor has the same problem, so
+    that is hidden too, with its `/` and `~` keys (still so in 0.16). The real-window check (macOS, computer use) confirmed the
     autosave a second after Solve with the app idle, the window's moved
     and resized place and the solved Flip game coming back after Quit,
     upstream's `fifteen.sav` opened from the command line, and Escape

@@ -1,6 +1,7 @@
 //! The Save and Load dialogs, drawn by `egui-file-dialog` so they look
 //! like the rest of the app and UI tests can drive them (persistence
-//! decision in `docs/porting-plan.md`). They list `.sav` files; the
+//! decision in `docs/porting-plan.md`), without the crate's search field
+//! and path editor (unreadable in light themes). They list `.sav` files; the
 //! folders last used, pinned folders and hidden-file choice are kept in
 //! eframe's `app.ron`.
 
@@ -63,10 +64,16 @@ impl FileDialog {
             .add_save_extension("Saved game", "sav")
             .default_save_extension("Saved game")
             .default_size([620.0, 400.0])
-            // Its search field is egui's near-black "dark canvas" in
-            // every theme, so typed text is unreadable in light ones.
+            // Its search field and path editor are egui's near-black
+            // "dark canvas" in every theme, so typed text is unreadable in
+            // light ones (still so in 0.16). Folders are reached from the
+            // sidebar and the clickable path instead.
             .show_search(false)
+            .show_path_edit_button(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO);
+        let keys = &mut inner.config_mut().keybindings;
+        keys.edit_path.clear();
+        keys.home_edit_path.clear();
         let labels = inner.labels_mut();
         "Save".clone_into(&mut labels.save_button);
         "Open".clone_into(&mut labels.open_button);
