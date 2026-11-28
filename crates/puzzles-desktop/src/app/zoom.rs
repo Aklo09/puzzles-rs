@@ -1,9 +1,9 @@
 //! Zooming the puzzle (`docs/porting-plan.md` §4.1 and the full-screen
 //! decision): a factor over "fit to window", from 1× to [`MAX`]. A
 //! zoomed puzzle is laid out again in a larger area, so the game redraws
-//! it at a larger size and it stays crisp; the area never asks for a
-//! canvas side over the cap the front end passes (the GPU's largest
-//! texture, and [`MAX_SIDE`]).
+//! it at a larger size and it stays crisp; the area never asks for more
+//! than [`MAX_PIXELS`], nor a side over the GPU's largest texture (which
+//! the front end passes).
 
 /// The largest zoom, over fit to window.
 pub const MAX: f32 = 4.0;
@@ -11,9 +11,11 @@ pub const MAX: f32 = 4.0;
 /// One zoom step (keyboard, menu).
 pub const STEP: f32 = 1.25;
 
-/// The largest canvas side zoom asks for, in pixels: 64 MiB of pixels
-/// at most, as the canvas and again as the texture.
-pub const MAX_SIDE: u32 = 4096;
+/// The largest area zoom asks for, in pixels: 128 MiB as the canvas,
+/// and again as the texture. About 2.5× a maximised window on a Retina
+/// laptop; the full [`MAX`] in smaller windows. (A cap per side instead,
+/// 4096 pixels, allowed only 137% there: the play test.)
+pub const MAX_PIXELS: u64 = 32 << 20;
 
 /// How far the puzzle is zoomed.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -63,13 +65,15 @@ impl Zoom {
         std::mem::replace(&mut self.factor, 1.0) > 1.0
     }
 
-    /// The largest zoom in a `viewport` (pixels) with canvas sides
-    /// capped at `max_side` pixels: never below fit, even if the viewport
-    /// itself is larger than the cap.
+    /// The largest zoom in a `viewport` (pixels) within [`MAX_PIXELS`]
+    /// and canvas sides of at most `max_side` pixels: never below fit,
+    /// even if the viewport itself is larger than the caps.
     #[must_use]
     pub fn ceiling(viewport: (u32, u32), max_side: u32) -> f32 {
-        let largest = viewport.0.max(viewport.1).max(1) as f32;
-        MAX.min(max_side as f32 / largest).max(1.0)
+        let (w, h) = (viewport.0.max(1) as f32, viewport.1.max(1) as f32);
+        let by_side = max_side as f32 / w.max(h);
+        let by_area = (MAX_PIXELS as f32 / (w * h)).sqrt();
+        MAX.min(by_side).min(by_area).max(1.0)
     }
 
     /// The zoom applied in a `viewport`, capped as in
@@ -139,18 +143,27 @@ mod tests {
     }
 
     #[test]
-    fn the_area_grows_by_the_zoom_up_to_the_cap() {
+    fn the_area_grows_by_the_zoom_up_to_the_caps() {
+        const GPU: u32 = 8192;
         let mut z = Zoom::default();
-        assert_eq!(z.area((800, 600), MAX_SIDE), (800, 600));
+        assert_eq!(z.area((800, 600), GPU), (800, 600));
         z.scale(2.0);
-        assert_eq!(z.area((800, 600), MAX_SIDE), (1600, 1200));
+        assert_eq!(z.area((800, 600), GPU), (1600, 1200));
         z.scale(2.0);
-        assert_eq!(z.applied((800, 600), 2400), 3.0, "capped");
-        assert_eq!(Zoom::ceiling((800, 600), MAX_SIDE), MAX);
-        assert_eq!(Zoom::ceiling((5000, 3000), MAX_SIDE), 1.0);
+        assert_eq!(Zoom::ceiling((800, 600), GPU), MAX);
+        assert_eq!(z.area((800, 600), GPU), (3200, 2400));
+        // The GPU's side limit.
+        assert_eq!(z.applied((800, 600), 2400), 3.0);
         assert_eq!(z.area((800, 600), 2400), (2400, 1800));
-        assert_eq!(z.applied((5000, 3000), MAX_SIDE), 1.0, "fit beats the cap");
-        assert_eq!(z.area((5000, 3000), MAX_SIDE), (5000, 3000));
+        // The area budget: a maximised window on a Retina laptop.
+        let retina = (3024, 1700);
+        let top = Zoom::ceiling(retina, GPU);
+        assert!((2.5..2.6).contains(&top), "{top}");
+        let (w, h) = z.area(retina, GPU);
+        assert!(u64::from(w) * u64::from(h) <= MAX_PIXELS);
+        // Fit beats both caps.
+        assert_eq!(Zoom::ceiling((9000, 6000), GPU), 1.0);
+        assert_eq!(z.area((9000, 6000), GPU), (9000, 6000));
         assert_eq!(Zoom::percent(1.25), "125%");
     }
 

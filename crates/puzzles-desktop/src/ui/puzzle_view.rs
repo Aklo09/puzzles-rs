@@ -182,7 +182,7 @@ impl PuzzleView {
                 self.rezoomed = Some(Anchor::At(pointer - rect.min));
             }
         }
-        let max_side = zoom::MAX_SIDE.min(ui.input(|i| i.max_texture_side) as u32);
+        let max_side = u32::try_from(ui.input(|i| i.max_texture_side)).unwrap_or(u32::MAX);
         let canvas_points = |session: &mut Session| {
             session
                 .canvas_mut()
