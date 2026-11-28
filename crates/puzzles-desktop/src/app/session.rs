@@ -297,10 +297,12 @@ impl Session {
         self.generation = Some(Generation { result: rx });
     }
 
-    /// Drops the New Game in progress. Returns whether a game is left to
-    /// show.
+    /// Drops the New Game in progress, and the choices that led to it
+    /// (parameters, a seed or a game ID): the next New Game is as before.
+    /// Returns whether a game is left to show.
     pub fn cancel_generation(&mut self) -> bool {
         self.generation = None;
+        self.puzzle.cancel_new_game();
         self.has_game
     }
 
@@ -870,6 +872,32 @@ mod tests {
                 &format!("GAME    :{}:{name}", name.len()),
             )
             .into_bytes()
+    }
+
+    #[test]
+    fn cancelling_a_new_size_keeps_the_old_one() {
+        let mut s = ready();
+        let id = s.game_id();
+        let width = |s: &Session| {
+            s.config(ConfigKind::Settings).unwrap().items[0]
+                .as_str()
+                .map(str::to_owned)
+        };
+        let before = width(&s);
+        let mut items = s.config(ConfigKind::Settings).unwrap().items;
+        items[0] = ConfigItem::string("Width", "7");
+        s.apply_config(ConfigKind::Settings, &items).unwrap();
+        assert!(s.is_generating());
+        assert!(s.cancel_generation());
+        assert_eq!(width(&s), before, "the Custom dialog");
+        assert_eq!(s.game_id(), id);
+        s.command(Command::NewGame);
+        wait(&mut s);
+        assert!(
+            s.game_id().unwrap().starts_with("5x5:"),
+            "{:?}",
+            s.game_id()
+        );
     }
 
     #[test]

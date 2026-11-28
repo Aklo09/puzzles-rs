@@ -167,10 +167,12 @@ impl<G: Game> Midend<G> {
         write_line(w, "VERSION", VERSION.as_bytes())?;
         write_line(w, "GAME", G::NAME.as_bytes())?;
         write_line(w, "PARAMS", G::encode_params(&self.params, true).as_bytes())?;
-        if let Some(curparams) = &self.curparams {
+        // The game on screen, even while a choice for the next one is
+        // pending; PARAMS are the next game's, as in C.
+        if let Some(curparams) = self.shown_curparams() {
             write_line(w, "CPARAMS", G::encode_params(curparams, true).as_bytes())?;
         }
-        if let Some(seed) = &self.seed {
+        if let Some(seed) = self.shown_seed() {
             // Seeds needn't be printable; hex-encode those that aren't.
             if printable(seed) {
                 write_line(w, "SEED", seed)?;
@@ -178,13 +180,13 @@ impl<G: Game> Midend<G> {
                 write_line(w, "HEXSEED", bytes_to_hex(seed).as_bytes())?;
             }
         }
-        if let Some(desc) = &self.desc {
+        if let Some(desc) = self.shown_desc() {
             write_line(w, "DESC", desc.as_bytes())?;
         }
-        if let Some(privdesc) = &self.privdesc {
+        if let Some(privdesc) = self.shown_privdesc() {
             write_line(w, "PRIVDESC", privdesc.as_bytes())?;
         }
-        if let Some(aux) = &self.aux {
+        if let Some(aux) = self.shown_aux() {
             // Obfuscated, so a glance at the file doesn't spoil the
             // solution.
             let mut bytes = aux.as_bytes().to_vec();

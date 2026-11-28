@@ -64,6 +64,8 @@ pub trait Puzzle {
     fn begin_new_game(&mut self) -> NewGameJob;
     /// [`Midend::finish_new_game`].
     fn finish_new_game(&mut self, generated: GeneratedGame) -> bool;
+    /// [`Midend::cancel_new_game`].
+    fn cancel_new_game(&mut self) -> bool;
     /// [`Midend::restart_game`].
     fn restart_game(&mut self);
     /// [`Midend::process_key`]; undo, redo, new game, solve and quit are
@@ -210,6 +212,10 @@ impl<G: Game> Puzzle for Midend<G> {
 
     fn begin_new_game(&mut self) -> NewGameJob {
         Midend::begin_new_game(self)
+    }
+
+    fn cancel_new_game(&mut self) -> bool {
+        Midend::cancel_new_game(self)
     }
 
     fn finish_new_game(&mut self, generated: GeneratedGame) -> bool {

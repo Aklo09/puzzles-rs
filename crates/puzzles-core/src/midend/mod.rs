@@ -173,6 +173,24 @@ enum GenMode {
     Nothing,
 }
 
+/// The record of the game on screen, kept from the moment a choice for
+/// the next game (parameters, a seed or a game ID) changes the mid-end's
+/// own record until a game is installed. Not in C, which generates the
+/// new game at once; here New Game may run on another thread, and until
+/// it finishes, save files, game IDs and the ID dialogs describe the
+/// game on screen from this record, and
+/// [`cancel_new_game`](Midend::cancel_new_game) puts it back.
+struct Shown<G: Game> {
+    params: G::Params,
+    curparams: Option<G::Params>,
+    seed: Option<Vec<u8>>,
+    desc: Option<String>,
+    privdesc: Option<String>,
+    aux: Option<String>,
+    genmode: GenMode,
+    newgame_can_store_undo: bool,
+}
+
 /// A whole game, kept to undo a New Game (what C serialises for it).
 struct Snapshot<G: Game> {
     params: G::Params,
@@ -227,6 +245,8 @@ pub struct Midend<G: Game> {
     newgame_undo: Option<Box<Snapshot<G>>>,
     newgame_redo: Option<Box<Snapshot<G>>>,
     newgame_can_store_undo: bool,
+    /// The game on screen, while a choice for the next one is pending.
+    shown: Option<Shown<G>>,
 
     drawstate: Option<G::DrawState>,
     first_draw: bool,
@@ -292,6 +312,7 @@ impl<G: Game> Midend<G> {
             newgame_undo: None,
             newgame_redo: None,
             newgame_can_store_undo: false,
+            shown: None,
             drawstate: None,
             first_draw: true,
             ui: None,
@@ -473,8 +494,87 @@ impl<G: Game> Midend<G> {
     /// Sets the parameters for the next New Game (C's
     /// `midend_set_params`).
     pub fn set_params(&mut self, params: &G::Params) {
+        self.note_choice();
         self.job_epoch += 1;
         self.params = params.clone();
+    }
+
+    /// Keeps the record of the game on screen before a choice for the
+    /// next game first changes it (see [`Shown`]).
+    fn note_choice(&mut self) {
+        if self.shown.is_none() && !self.states.is_empty() {
+            self.shown = Some(Shown {
+                params: self.params.clone(),
+                curparams: self.curparams.clone(),
+                seed: self.seed.clone(),
+                desc: self.desc.clone(),
+                privdesc: self.privdesc.clone(),
+                aux: self.aux.clone(),
+                genmode: self.genmode,
+                newgame_can_store_undo: self.newgame_can_store_undo,
+            });
+        }
+    }
+
+    /// Drops the choices made for the next game since the game on screen
+    /// was installed (parameters, a seed or a game ID), and any New Game
+    /// in progress: New Game, the dialogs, save files and game IDs are
+    /// then as they were before. Returns whether there was anything to
+    /// drop. Not in C, which can't cancel a New Game.
+    pub fn cancel_new_game(&mut self) -> bool {
+        self.job_epoch += 1;
+        let Some(shown) = self.shown.take() else {
+            return false;
+        };
+        self.params = shown.params;
+        self.curparams = shown.curparams;
+        self.seed = shown.seed;
+        self.desc = shown.desc;
+        self.privdesc = shown.privdesc;
+        self.aux = shown.aux;
+        self.genmode = shown.genmode;
+        self.newgame_can_store_undo = shown.newgame_can_store_undo;
+        true
+    }
+
+    /// The game on screen's current parameters (see [`Shown`]).
+    pub(crate) fn shown_curparams(&self) -> Option<&G::Params> {
+        match &self.shown {
+            Some(shown) => shown.curparams.as_ref(),
+            None => self.curparams.as_ref(),
+        }
+    }
+
+    /// The game on screen's random seed, if it came from one.
+    pub(crate) fn shown_seed(&self) -> Option<&[u8]> {
+        match &self.shown {
+            Some(shown) => shown.seed.as_deref(),
+            None => self.seed.as_deref(),
+        }
+    }
+
+    /// The game on screen's public description.
+    pub(crate) fn shown_desc(&self) -> Option<&str> {
+        match &self.shown {
+            Some(shown) => shown.desc.as_deref(),
+            None => self.desc.as_deref(),
+        }
+    }
+
+    /// The game on screen's private description, if it differs.
+    pub(crate) fn shown_privdesc(&self) -> Option<&str> {
+        match &self.shown {
+            Some(shown) => shown.privdesc.as_deref(),
+            None => self.privdesc.as_deref(),
+        }
+    }
+
+    /// The game on screen's solution hint (C's `aux_info`).
+    pub(crate) fn shown_aux(&self) -> Option<&str> {
+        match &self.shown {
+            Some(shown) => shown.aux.as_deref(),
+            None => self.aux.as_deref(),
+        }
     }
 
     /// The parameters for the next New Game.
@@ -493,8 +593,13 @@ impl<G: Game> Midend<G> {
     /// Applies what a game asked for through its context.
     fn apply_ctx(&mut self, mut ctx: GameCtx) {
         if let Some(superseded) = ctx.take_superseded() {
-            self.desc = Some(superseded.desc);
-            self.privdesc = Some(superseded.private_desc);
+            // It describes the game on screen.
+            let (desc, privdesc) = match &mut self.shown {
+                Some(shown) => (&mut shown.desc, &mut shown.privdesc),
+                None => (&mut self.desc, &mut self.privdesc),
+            };
+            *desc = Some(superseded.desc);
+            *privdesc = Some(superseded.private_desc);
             self.id_changed = true;
         }
     }
@@ -541,6 +646,7 @@ impl<G: Game> Midend<G> {
     /// has been checked.
     fn install(&mut self, s: Snapshot<G>) {
         self.job_epoch += 1;
+        self.shown = None;
         self.desc = s.desc;
         self.privdesc = s.privdesc;
         self.seed = s.seed;
@@ -642,6 +748,7 @@ impl<G: Game> Midend<G> {
             return false;
         }
         self.job_epoch += 1;
+        self.shown = None;
         self.newgame_undo = None;
         let keep_for_undo = self.newgame_can_store_undo;
         if keep_for_undo {
@@ -829,7 +936,7 @@ impl<G: Game> Midend<G> {
         }
         // From the public description, so Mines restarts after the first
         // click.
-        let Some(desc) = self.desc.clone() else {
+        let Some(desc) = self.shown_desc().map(str::to_owned) else {
             return;
         };
         let params = self.params.clone();
@@ -1167,7 +1274,7 @@ impl<G: Game> Midend<G> {
         if self.statepos < 1 {
             return Err(GameError::new("No game set up to solve"));
         }
-        let mv = G::solve(&self.states[0].state, self.current(), self.aux.as_deref())?;
+        let mv = G::solve(&self.states[0].state, self.current(), self.shown_aux())?;
         let mut ctx = GameCtx::new();
         let state = G::execute_move(&mut ctx, self.current(), &mv)
             .unwrap_or_else(|| panic!("{}: the solver's move failed", G::NAME));
@@ -1329,6 +1436,7 @@ impl<G: Game> Midend<G> {
             G::validate_desc(&newparams, desc)?;
         }
 
+        self.note_choice();
         self.job_epoch += 1;
         self.params = newparams;
         self.curparams = newcurparams;
@@ -1352,8 +1460,8 @@ impl<G: Game> Midend<G> {
     /// `midend_get_game_id`); `None` before the first game.
     #[must_use]
     pub fn get_game_id(&self) -> Option<String> {
-        let params = G::encode_params(self.curparams.as_ref()?, false);
-        Some(format!("{params}:{}", self.desc.as_deref()?))
+        let params = G::encode_params(self.shown_curparams()?, false);
+        Some(format!("{params}:{}", self.shown_desc()?))
     }
 
     /// The current game's random seed ID, `params#seed` (C's
@@ -1361,8 +1469,8 @@ impl<G: Game> Midend<G> {
     /// seed.
     #[must_use]
     pub fn get_random_seed(&self) -> Option<String> {
-        let seed = self.seed.as_ref()?;
-        let params = G::encode_params(self.curparams.as_ref()?, true);
+        let seed = self.shown_seed()?;
+        let params = G::encode_params(self.shown_curparams()?, true);
         Some(format!("{params}#{}", String::from_utf8_lossy(seed)))
     }
 
@@ -1381,14 +1489,14 @@ impl<G: Game> Midend<G> {
                 items: G::configure(&self.params)?,
             }),
             ConfigKind::Seed | ConfigKind::Desc => {
-                let curparams = self.curparams.as_ref()?;
+                let curparams = self.shown_curparams()?;
                 let seed = kind == ConfigKind::Seed;
                 let params = G::encode_params(curparams, seed);
                 let value = if seed {
-                    let s = self.seed.as_deref().unwrap_or_default();
+                    let s = self.shown_seed().unwrap_or_default();
                     format!("{params}#{}", String::from_utf8_lossy(s))
                 } else {
-                    format!("{params}:{}", self.desc.as_deref().unwrap_or(""))
+                    format!("{params}:{}", self.shown_desc().unwrap_or(""))
                 };
                 Some(Config {
                     title: format!("{name} {} selection", if seed { "random" } else { "game" }),
@@ -1415,6 +1523,7 @@ impl<G: Game> Midend<G> {
             ConfigKind::Settings => {
                 let params = G::custom_params(items)?;
                 G::validate_params(&params, true)?;
+                self.note_choice();
                 self.job_epoch += 1;
                 self.params = params;
             }
