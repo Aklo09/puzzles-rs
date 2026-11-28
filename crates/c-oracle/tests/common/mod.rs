@@ -12,7 +12,9 @@
 use c_oracle::{CGame, CMoveResult, CSession};
 use proptest::prelude::*;
 use puzzles_core::button::Button;
-use puzzles_core::drawing::{Drawing, RecordingDrawing};
+use puzzles_core::drawing::{
+    Align, Blitter, ColourIdx, Drawing, DrawingApi, FontType, RecordingDrawing,
+};
 use puzzles_core::game::{Game, GameCtx, GameStatus, MoveResult};
 
 /// The Rust half of a [`Pair`]: what `csrc/game_harness.c` keeps for C.
@@ -24,6 +26,9 @@ pub struct RustSession<G: Game> {
     pub ui: G::Ui,
     pub ds: G::DrawState,
     pub status: Option<String>,
+    /// C's palette index for each of the port's ([`CColours`]); empty
+    /// when they are the same.
+    pub c_colours: &'static [usize],
 }
 
 impl<G: Game> RustSession<G> {
@@ -40,6 +45,7 @@ impl<G: Game> RustSession<G> {
             ui,
             ds,
             status: None,
+            c_colours: &[],
         }
     }
 
@@ -54,7 +60,8 @@ impl<G: Game> RustSession<G> {
 
     pub fn redraw(&mut self, animate: bool, dir: i32, anim_time: f32, flash_time: f32) -> String {
         let mut rec = RecordingDrawing::default();
-        let mut dr = Drawing::new(&mut rec);
+        let mut mapped = CColours::new(&mut rec, self.c_colours);
+        let mut dr = Drawing::new(&mut mapped);
         let old = if animate { self.prev.as_ref() } else { None };
         G::redraw(
             &mut dr,
@@ -117,9 +124,24 @@ impl<G: Game> Pair<G> {
         desc: &str,
         tilesize: i32,
     ) -> Result<Self, TestCaseError> {
+        Self::with_c_colours(game, params, desc, tilesize, &[])
+    }
+
+    /// As [`new`](Self::new), for a port whose palette differs from C's:
+    /// `c_colours[i]` is C's index for the port's entry `i`, applied to
+    /// the port's draw traces before comparing (see [`CColours`]).
+    pub fn with_c_colours(
+        game: CGame,
+        params: &G::Params,
+        desc: &str,
+        tilesize: i32,
+        c_colours: &'static [usize],
+    ) -> Result<Self, TestCaseError> {
         let encoded = G::encode_params(params, true);
+        let mut rust = RustSession::new(params, desc, tilesize);
+        rust.c_colours = c_colours;
         let mut pair = Self {
-            rust: RustSession::new(params, desc, tilesize),
+            rust,
             c: CSession::new(game, &encoded, desc, tilesize),
             tilesize,
         };
@@ -295,5 +317,114 @@ impl<G: Game> Pair<G> {
         );
         prop_assert_eq!(&self.rust.status, &c_status, "status bar");
         Ok(())
+    }
+}
+
+/// A drawing that passes every call on with the port's palette indices
+/// replaced by C's, for a port that splits a C colour into entries of
+/// its own: C's aliases (Mosaic's `COL_TEXT_DARK = COL_MARKED`) draw
+/// with the aliased colour's index, the port with the new entry's. An
+/// empty map changes nothing.
+pub struct CColours<'a> {
+    inner: &'a mut dyn DrawingApi,
+    map: &'a [usize],
+}
+
+impl<'a> CColours<'a> {
+    pub fn new(inner: &'a mut dyn DrawingApi, map: &'a [usize]) -> Self {
+        Self { inner, map }
+    }
+
+    fn c(&self, colour: ColourIdx) -> ColourIdx {
+        self.map.get(colour).copied().unwrap_or(colour)
+    }
+}
+
+impl DrawingApi for CColours<'_> {
+    fn draw_text(
+        &mut self,
+        x: i32,
+        y: i32,
+        font: FontType,
+        size: i32,
+        align: Align,
+        colour: ColourIdx,
+        text: &str,
+    ) {
+        let colour = self.c(colour);
+        self.inner.draw_text(x, y, font, size, align, colour, text);
+    }
+
+    fn draw_rect(&mut self, x: i32, y: i32, w: i32, h: i32, colour: ColourIdx) {
+        let colour = self.c(colour);
+        self.inner.draw_rect(x, y, w, h, colour);
+    }
+
+    fn draw_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, colour: ColourIdx) {
+        let colour = self.c(colour);
+        self.inner.draw_line(x1, y1, x2, y2, colour);
+    }
+
+    fn draw_polygon(&mut self, points: &[(i32, i32)], fill: Option<ColourIdx>, outline: ColourIdx) {
+        let (fill, outline) = (fill.map(|f| self.c(f)), self.c(outline));
+        self.inner.draw_polygon(points, fill, outline);
+    }
+
+    fn draw_circle(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        radius: i32,
+        fill: Option<ColourIdx>,
+        outline: ColourIdx,
+    ) {
+        let (fill, outline) = (fill.map(|f| self.c(f)), self.c(outline));
+        self.inner.draw_circle(cx, cy, radius, fill, outline);
+    }
+
+    fn draw_thick_line(
+        &mut self,
+        thickness: f32,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        colour: ColourIdx,
+    ) {
+        let colour = self.c(colour);
+        self.inner
+            .draw_thick_line(thickness, x1, y1, x2, y2, colour);
+    }
+
+    fn draw_update(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        self.inner.draw_update(x, y, w, h);
+    }
+
+    fn clip(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        self.inner.clip(x, y, w, h);
+    }
+
+    fn unclip(&mut self) {
+        self.inner.unclip();
+    }
+
+    fn start_draw(&mut self) {
+        self.inner.start_draw();
+    }
+
+    fn end_draw(&mut self) {
+        self.inner.end_draw();
+    }
+
+    fn blitter_save(&mut self, blitter: &Blitter, x: i32, y: i32) {
+        self.inner.blitter_save(blitter, x, y);
+    }
+
+    fn blitter_load(&mut self, blitter: &Blitter, x: i32, y: i32) {
+        self.inner.blitter_load(blitter, x, y);
+    }
+
+    fn text_fallback<'s>(&self, strings: &[&'s str]) -> Option<&'s str> {
+        self.inner.text_fallback(strings)
     }
 }

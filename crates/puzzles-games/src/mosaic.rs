@@ -27,7 +27,11 @@
 //!   reads the same way.
 //!
 //! Differences (UI only): the Custom dialog lists Width before Height
-//! (C lists Height first; custom dialog field order decision).
+//! (C lists Height first; custom dialog field order decision). The clue
+//! text colours, which C draws with the indices of the black and white
+//! square colours, are palette entries of their own (`TextDark`,
+//! `TextLight`), so themes can colour them apart; the C comparison tests
+//! map them back to C's indices.
 //!
 //! Numbers in move strings are read with C's `atoi`, so a field of more
 //! than nine digits wraps as with a 64-bit `long` (Linux, macOS; see
@@ -87,21 +91,22 @@ puzzles_core::palette! {
         /// An undecided square.
         Unmarked => Specific("unmarked"),
         Grid => Role(Grid),
-        /// A black square, and clue text on white and undecided ones.
+        /// A black square.
         Marked => Role(Filled),
-        /// A white square, and clue text on black ones.
+        /// A white square.
         Blank => Specific("blank"),
         /// A satisfied clue.
         TextSolved => Role(Done),
         Error => Role(Error),
         Cursor => Role(Cursor),
+        /// Clue text on white and undecided squares. In C an alias of
+        /// `COL_MARKED` (`COL_TEXT_DARK`), drawn with its index.
+        TextDark => Specific("text_dark"),
+        /// Clue text on black squares. In C an alias of `COL_BLANK`
+        /// (`COL_TEXT_LIGHT`), drawn with its index.
+        TextLight => Specific("text_light"),
     }
 }
-
-/// Clue text on light squares (C's `COL_TEXT_DARK`).
-const TEXT_DARK: Col = Col::Marked;
-/// Clue text on black squares (C's `COL_TEXT_LIGHT`).
-const TEXT_LIGHT: Col = Col::Blank;
 
 /// Mosaic's parameters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1201,11 +1206,11 @@ fn draw_tile(dr: &mut Drawing<'_>, tile: i32, ts: i32, clue: Option<u8>, x: i32,
 
     if tile & (DRAW_MARGIN_R | DRAW_MARGIN_D) == 0 {
         let (fill, mut text) = if has(MARKED) {
-            (Col::Marked, TEXT_LIGHT)
+            (Col::Marked, Col::TextLight)
         } else if has(BLANK) {
-            (Col::Blank, TEXT_DARK)
+            (Col::Blank, Col::TextDark)
         } else {
-            (Col::Unmarked, TEXT_DARK)
+            (Col::Unmarked, Col::TextDark)
         };
         if has(ERROR) {
             text = Col::Error;

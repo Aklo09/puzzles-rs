@@ -26,31 +26,64 @@ use puzzles_theme::{Rgb, Theme, ThemeSet, bevel, game_key, series_key};
 /// against the port's `bg * (1/3)` differ in the last bit.
 const EPSILON: f32 = 1e-6;
 
+/// A ported game: its name, palette, C original, and C's palette index
+/// for each of its entries, empty when they are the same. A port can
+/// give a C alias an entry of its own (Mosaic's clue text colours, C's
+/// `COL_TEXT_DARK = COL_MARKED`), which must equal the aliased colour.
+struct Ported {
+    name: &'static str,
+    palette: &'static [PaletteEntry],
+    c_game: CGame,
+    c_colours: &'static [usize],
+}
+
+impl Ported {
+    /// C's colour for each of the port's entries.
+    fn c_colours(&self) -> Vec<Rgb> {
+        let c: Vec<Rgb> = self.c_game.colours().into_iter().map(rgb).collect();
+        if self.c_colours.is_empty() {
+            return c;
+        }
+        assert_eq!(self.c_colours.len(), self.palette.len(), "{}", self.name);
+        self.c_colours.iter().map(|&i| c[i]).collect()
+    }
+}
+
 /// The ported games, with their C originals. Add each game as it is
 /// ported, then regenerate Classic.
-fn ported() -> Vec<(&'static str, &'static [PaletteEntry], CGame)> {
+fn ported() -> Vec<Ported> {
+    let game = |name, palette, c_game| Ported {
+        name,
+        palette,
+        c_game,
+        c_colours: &[],
+    };
     vec![
-        (
+        game(
             puzzles_games::fifteen::Fifteen::NAME,
             puzzles_games::fifteen::Fifteen::PALETTE,
             CGame::fifteen(),
         ),
-        (
+        game(
             puzzles_games::flip::Flip::NAME,
             puzzles_games::flip::Flip::PALETTE,
             CGame::flip(),
         ),
-        (
+        game(
             puzzles_games::guess::Guess::NAME,
             puzzles_games::guess::Guess::PALETTE,
             CGame::guess(),
         ),
-        (
-            puzzles_games::mosaic::Mosaic::NAME,
-            puzzles_games::mosaic::Mosaic::PALETTE,
-            CGame::mosaic(),
-        ),
-        (
+        Ported {
+            c_colours: &[0, 1, 2, 3, 4, 5, 6, 7, 3, 4],
+            // Mosaic's clue text colours (also in mosaic_parity.rs).
+            ..game(
+                puzzles_games::mosaic::Mosaic::NAME,
+                puzzles_games::mosaic::Mosaic::PALETTE,
+                CGame::mosaic(),
+            )
+        },
+        game(
             puzzles_games::nullgame::NullGame::NAME,
             puzzles_games::nullgame::NullGame::PALETTE,
             CGame::nullgame(),
@@ -105,8 +138,9 @@ fn generate() -> Theme {
         roles: classic_roles(),
         ..Theme::default()
     };
-    for (name, palette, c_game) in ported() {
-        let c: Vec<Rgb> = c_game.colours().into_iter().map(rgb).collect();
+    for game in ported() {
+        let (name, palette) = (game.name, game.palette);
+        let c = game.c_colours();
         assert_eq!(c.len(), palette.len(), "{name}: palette size");
         let key = game_key(name);
         let mut colours = puzzles_theme::GameColours::default();
@@ -178,11 +212,14 @@ fn classic_theme_is_generated_from_c() {
 #[test]
 fn palettes_match_c_under_classic() {
     let set = ThemeSet::builtin();
-    for (name, palette, c_game) in ported() {
+    for game in ported() {
+        let (name, palette) = (game.name, game.palette);
         let resolved = set.resolve("Classic", name, palette).expect("resolves");
-        for (i, (r, c)) in resolved.iter().zip(c_game.colours()).enumerate() {
+        let c = game.c_colours();
+        assert_eq!(resolved.len(), c.len(), "{name}: palette size");
+        for (i, (r, &c)) in resolved.iter().zip(&c).enumerate() {
             assert!(
-                r.max_difference(rgb(c)) <= EPSILON,
+                r.max_difference(c) <= EPSILON,
                 "{name} entry {i} ({}): {r} vs C {:?}",
                 palette[i].name,
                 c

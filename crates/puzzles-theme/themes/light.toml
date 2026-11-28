@@ -29,3 +29,9 @@ pieces = ["#e15759", "#f2cf4a", "#59a14f", "#4e79a7", "#f28e2b", "#9d6bb5", "#9c
 
 [ui]
 accent = "#2563eb"
+
+# Mosaic: clue text in the colour of the opposite square, black
+# (`filled`) on white and undecided squares, white on black ones.
+[game.mosaic]
+text_dark = "#27272a"
+text_light = "#ececec"

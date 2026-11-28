@@ -29,6 +29,11 @@ use puzzles_core::midend::{ConfigKind, Midend, MidendOptions};
 use puzzles_core::random::RandomState;
 use puzzles_games::mosaic::{Mosaic, Move, Params};
 
+/// C's palette index for each of the port's colours: the clue text
+/// colours are entries of their own in the port, aliases of the black
+/// and white square colours in C (also in `theme_parity.rs`).
+const C_COLOURS: &[usize] = &[0, 1, 2, 3, 4, 5, 6, 7, 3, 4];
+
 fn rust_desc(p: &Params, seed: &[u8], interactive: bool) -> String {
     let new = Mosaic::new_desc(p, &mut RandomState::new(seed), interactive);
     assert_eq!(new.aux, None, "Mosaic has no aux data");
@@ -218,7 +223,7 @@ proptest! {
     #[test]
     fn play_matches((p, seed, tilesize, steps) in game()) {
         let desc = rust_desc(&p, &seed, true);
-        let mut pair = Pair::<Mosaic>::new(CGame::mosaic(), &p, &desc, tilesize)?;
+        let mut pair = Pair::<Mosaic>::with_c_colours(CGame::mosaic(), &p, &desc, tilesize, C_COLOURS)?;
         pair.run(&steps)?;
     }
 }
@@ -232,7 +237,8 @@ fn winning_by_clicks_matches_c() {
     for (_, p) in Mosaic::presets().presets().filter(|(_, p)| p.w <= 10) {
         for seed in 0..5 {
             let desc = rust_desc(p, format!("win {seed}").as_bytes(), true);
-            let mut pair = Pair::<Mosaic>::new(CGame::mosaic(), p, &desc, ts).expect("same start");
+            let mut pair = Pair::<Mosaic>::with_c_colours(CGame::mosaic(), p, &desc, ts, C_COLOURS)
+                .expect("same start");
             let Ok(Move::Solve(marked)) = Mosaic::solve(&pair.rust.orig, &pair.rust.orig, None)
             else {
                 panic!("{p:?}: no solution");
@@ -278,7 +284,8 @@ fn drags_match_c() {
     };
     for seed in 0..10 {
         let desc = rust_desc(&p, format!("drag {seed}").as_bytes(), true);
-        let mut pair = Pair::<Mosaic>::new(CGame::mosaic(), &p, &desc, ts).expect("same start");
+        let mut pair = Pair::<Mosaic>::with_c_colours(CGame::mosaic(), &p, &desc, ts, C_COLOURS)
+            .expect("same start");
         let at = |x: i32, y: i32, button: i32| Step::Input {
             x: ts / 2 + ts * x + 3,
             y: ts / 2 + ts * y + 3,
@@ -344,7 +351,7 @@ fn odd_squares_from_a_save_file_draw_like_c() {
         let c_trace = c.force_redraw();
         r.force_redraw();
         let mut rec = puzzles_core::drawing::RecordingDrawing::default();
-        r.redraw(&mut rec);
+        r.redraw(&mut common::CColours::new(&mut rec, C_COLOURS));
         assert_eq!(rec.to_string(), c_trace, "paint {paint}");
         let mut out = Vec::new();
         r.serialise(&mut out).expect("saves");

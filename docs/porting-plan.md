@@ -1327,7 +1327,12 @@ at the top.
     whose squares hold odd values drawn from scratch. Palette: unmarked
     and blank squares are `Specific`, black squares `Filled`, satisfied
     clues `Done` (C's grey is a Classic override; Light and Dark show
-    their green). Canvas snapshots in Classic, Light and Dark.
+    their green). The clue text colours, C aliases of the black and white
+    square colours (`COL_TEXT_DARK = COL_MARKED`), are `Specific` entries
+    of their own (`text_dark`, `text_light`), set in every built-in
+    theme; the shared driver (`Pair::with_c_colours`, `CColours`) and
+    the theme parity test map them back to C's indices. Canvas snapshots
+    in Classic, Light and Dark.
     Desktop play on two OSes is still to do.
 
     Notes, found on the way:

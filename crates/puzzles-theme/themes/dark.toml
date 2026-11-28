@@ -44,3 +44,10 @@ wrong = "#2a2a2e"
 [game.guess]
 correct_place = "#000000"
 correct_colour = "#ffffff"
+
+# Mosaic: clue text in the colour of the opposite square, as in Light:
+# here light (`filled`) on dark white and undecided squares, dark on
+# light black ones.
+[game.mosaic]
+text_dark = "#d4d4d8"
+text_light = "#212121"
