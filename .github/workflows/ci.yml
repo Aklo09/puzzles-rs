@@ -5,10 +5,21 @@ name: CI
 # - macOS runs only on demand: start the workflow by hand from the Actions
 #   tab, or `gh workflow run ci.yml --ref <branch>` (macOS on by default);
 # - pull requests that only touch documentation don't run at all;
-# - there is no rerun after merging to main: the PR run already tested the
-#   same code (squash merges), and a manual run is always available.
+# - tests don't rerun after merging to main (the PR run already tested the
+#   same code, squash merges), but main builds without testing to fill
+#   the dependency cache: a pull request can only restore caches from its
+#   own branch or from main, so without it every PR compiles all its
+#   dependencies from scratch. Only main saves caches; PRs restore them.
 on:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "LICENCE"
+      - ".claude/**"
+      - ".agents/**"
+  push:
+    branches: [main]
     paths-ignore:
       - "docs/**"
       - "**.md"
@@ -31,6 +42,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Line tables are enough for panic backtraces in CI; full debug info makes
+  # the cache several times larger and linking slower (most on Windows).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   ci:
@@ -52,12 +66,19 @@ jobs:
       - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # A software Vulkan driver (Mesa's lavapipe), so the desktop app's
       # wgpu UI tests render on runners without a GPU.
-      - if: runner.os == 'Linux'
+      - if: runner.os == 'Linux' && github.event_name != 'push'
         run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
 
       # Same checks as locally: fmt, clippy (-D warnings), all tests
       # including the C oracle (MSVC on Windows, gcc on Linux, clang on macOS).
-      - run: cargo xtask ci
+      - if: github.event_name != 'push'
+        run: cargo xtask ci
+
+      # On main: build what the checks build, for the cache.
+      - if: github.event_name == 'push'
+        run: cargo xtask ci --build-only
